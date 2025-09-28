@@ -3,7 +3,8 @@ import Job from '../models/Job.js';
 import Application from '../models/Application.js';
 import Connection from '../models/Connection.js';
 import Notification from '../models/Notification.js';
-
+import User from '../models/User.js';
+import mongoose from 'mongoose';
 export const getProfile = async (req, res, next) => {
   try {
     const company = await Company.findById(req.user._id)
@@ -83,36 +84,68 @@ export const getCompanyAnalytics = async (req, res, next) => {
   try {
     const companyId = req.user._id;
 
-    // Basic counts
+    // Jobs
     const totalJobs = await Job.countDocuments({ company: companyId });
     const activeJobs = await Job.countDocuments({ company: companyId, status: 'active' });
-    
-    // Application stats
-    const companyJobs = await Job.find({ company: companyId }).select('_id');
+    const companyJobs = await Job.find({ company: companyId }).select('_id views createdAt');
     const jobIds = companyJobs.map(job => job._id);
-    
+
+    // Applications
     const totalApplications = await Application.countDocuments({ job: { $in: jobIds } });
-    
     const applicationStatusStats = await Application.aggregate([
       { $match: { job: { $in: jobIds } } },
       { $group: { _id: '$status', count: { $sum: 1 } } }
     ]);
 
-    // Recent activity
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    const recentApplications = await Application.countDocuments({
-      job: { $in: jobIds },
-      appliedAt: { $gte: thirtyDaysAgo }
-    });
-
     // Job views
-    const totalViews = await Job.aggregate([
-      { $match: { company: companyId } },
-      { $group: { _id: null, totalViews: { $sum: '$views' } } }
-    ]);
+    const totalViews = companyJobs.reduce((sum, job) => sum + (job.views || 0), 0);
 
+    // Performance Metrics
+    const applications = await Application.find({ job: { $in: jobIds } })
+      .select('status responseTime createdAt');
+
+    const responseTimes = applications.filter(a => a.responseTime).map(a => a.responseTime);
+    const avgResponseTime = responseTimes.length
+      ? (responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length).toFixed(1)
+      : 0;
+
+    const interviewCount = applications.filter(a => a.status === 'interview').length;
+    const hiredCount = applications.filter(a => a.status === 'hired').length;
+
+    const interviewRate = totalApplications
+      ? ((interviewCount / totalApplications) * 100).toFixed(1)
+      : 0;
+
+    const hireRate = totalApplications
+      ? ((hiredCount / totalApplications) * 100).toFixed(1)
+      : 0;
+
+    // Recent activity (last 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const recentApplications = applications.filter(a => a.createdAt >= sevenDaysAgo).length;
+    const recentJobs = companyJobs.filter(j => j.createdAt >= sevenDaysAgo).length;
+
+    const recentActivity = [
+      {
+        type: 'applications',
+        count: recentApplications,
+        time: 'last 7 days'
+      },
+      {
+        type: 'jobs',
+        count: recentJobs,
+        time: 'last 7 days'
+      },
+      {
+        type: 'views',
+        count: totalViews,
+        time: 'last 7 days'
+      }
+    ];
+
+    // Response
     res.json({
       success: true,
       data: {
@@ -120,16 +153,22 @@ export const getCompanyAnalytics = async (req, res, next) => {
           jobs: totalJobs,
           activeJobs,
           applications: totalApplications,
-          recentApplications,
-          totalViews: totalViews[0]?.totalViews || 0
+          totalViews
         },
-        applicationStatus: applicationStatusStats
+        applicationStatus: applicationStatusStats,
+        metrics: {
+          avgResponseTime,
+          interviewRate,
+          hireRate
+        },
+        recentActivity
       }
     });
   } catch (error) {
     next(error);
   }
 };
+
 
 export const searchCandidates = async (req, res, next) => {
   try {
@@ -204,3 +243,163 @@ export const getAllCompanies = async (req, res, next) => {
     next(error)
   }
 }
+
+export const followCompany = async (req, res, next) => {
+  try {
+    const { companyId } = req.params;
+
+    if (!companyId || !mongoose.Types.ObjectId.isValid(companyId)) {
+      return res.status(400).json({ success: false, message: 'Invalid company id' });
+    }
+
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
+
+    const companyToFollow = await Company.findById(companyId);
+    if (!companyToFollow) {
+      return res.status(404).json({ success: false, message: 'Company not found' });
+    }
+
+    const followerId = req.user._id;
+    const followerModel = req.user.role === 'company' ? 'Company' : 'User';
+
+    // Use $addToSet to avoid duplicates and return updated doc
+    const updatedCompany = await Company.findByIdAndUpdate(
+      companyId,
+      { $addToSet: { followers: followerId } },
+      { new: true }
+    ).select('followers');
+
+    // Also add to follower's followingCompanies (or followingCompanies for a company)
+    if (req.user.role === 'company') {
+      await Company.findByIdAndUpdate(followerId, { $addToSet: { followingCompanies: companyId } });
+    } else {
+      await User.findByIdAndUpdate(followerId, { $addToSet: { followingCompanies: companyId } });
+    }
+
+    // Create a notification
+    try {
+      const notification = new Notification({
+        recipient: companyId,
+        recipientModel: 'Company',
+        sender: followerId,
+        senderModel: followerModel,
+        type: 'follow',
+        title: 'New Follower',
+        message: `${req.user.name || req.user.companyName || 'Someone'} started following you`,
+        relatedEntity: followerId,
+        relatedEntityModel: followerModel
+      });
+      await notification.save();
+    } catch (notifErr) {
+      // Notification failure should not block follow action
+      console.error('Failed to create follow notification:', notifErr);
+    }
+
+    return res.json({
+      success: true,
+      message: 'Followed company successfully',
+      data: { followersCount: updatedCompany.followers.length }
+    });
+  } catch (error) {
+    console.error('followCompany error:', error);
+    next(error);
+  }
+};
+
+/**
+ * Unfollow company
+ * POST /api/companies/:companyId/unfollow
+ */
+export const unfollowCompany = async (req, res, next) => {
+  try {
+    const { companyId } = req.params;
+
+    if (!companyId || !mongoose.Types.ObjectId.isValid(companyId)) {
+      return res.status(400).json({ success: false, message: 'Invalid company id' });
+    }
+
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
+
+    const followerId = req.user._id;
+
+    const updatedCompany = await Company.findByIdAndUpdate(
+      companyId,
+      { $pull: { followers: followerId } },
+      { new: true }
+    ).select('followers');
+
+    if (req.user.role === 'company') {
+      await Company.findByIdAndUpdate(followerId, { $pull: { followingCompanies: companyId } });
+    } else {
+      await User.findByIdAndUpdate(followerId, { $pull: { followingCompanies: companyId } });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Unfollowed company successfully',
+      data: { followersCount: updatedCompany ? updatedCompany.followers.length : 0 }
+    });
+  } catch (error) {
+    console.error('unfollowCompany error:', error);
+    next(error);
+  }
+};
+
+/**
+ * Get followers of a company (public)
+ * GET /api/companies/:companyId/followers
+ */
+export const getCompanyFollowers = async (req, res, next) => {
+  try {
+    const { companyId } = req.params;
+
+    if (!companyId || !mongoose.Types.ObjectId.isValid(companyId)) {
+      return res.status(400).json({ success: false, message: 'Invalid company id' });
+    }
+
+    const company = await Company.findById(companyId).populate('followers', 'name avatar role');
+    if (!company) {
+      return res.status(404).json({ success: false, message: 'Company not found' });
+    }
+
+    return res.json({ success: true, data: company.followers });
+  } catch (error) {
+    console.error('getCompanyFollowers error:', error);
+    next(error);
+  }
+};
+
+/**
+ * Get following (for current authenticated company/user)
+ * GET /api/companies/following
+ */
+export const getCompanyFollowing = async (req, res, next) => {
+  try {
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
+
+    const company = await Company.findById(req.user._id)
+      .populate('following', 'name avatar bio')
+      .populate('followingCompanies', 'name avatar industry');
+
+    if (!company) {
+      return res.status(404).json({ success: false, message: 'Company not found' });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        followingUsers: company.following || [],
+        followingCompanies: company.followingCompanies || []
+      }
+    });
+  } catch (error) {
+    console.error('getCompanyFollowing error:', error);
+    next(error);
+  }
+};

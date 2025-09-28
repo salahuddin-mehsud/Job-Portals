@@ -22,11 +22,31 @@ const companySchema = new mongoose.Schema({
   verificationToken: { type: String },
   resetPasswordToken: { type: String },
   resetPasswordExpire: { type: Date },
+
+  // job postings & core relations
   jobPostings: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Job' }],
+
+  // Connections: keep existing shape for compatibility (users)
   connections: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  followers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  following: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+
+  // Followers & Following split by type (explicit arrays)
+  // Users who follow this company
+  followersUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+
+  // Companies who follow this company (B2B follows)
+  followersCompanies: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Company' }],
+
+  // Who this company is following (users)
+  followingUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+
+  // Who this company is following (other companies)
   followingCompanies: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Company' }],
+
+  // Legacy fields (kept for backward compatibility if other code still references them)
+  // We won't programmatically rely on these in new controllers — use the explicit arrays above.
+  followers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], // legacy
+  following: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], // legacy
+
   notifications: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Notification' }],
   chatRooms: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Chat' }],
 }, {
@@ -36,7 +56,7 @@ const companySchema = new mongoose.Schema({
 // Hash password before saving
 companySchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();
-  
+
   try {
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
@@ -51,7 +71,7 @@ companySchema.methods.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-// Index for search functionality
+// Text index for name, bio, industry
 companySchema.index({ name: 'text', bio: 'text', industry: 'text' });
 
 export default mongoose.model('Company', companySchema);

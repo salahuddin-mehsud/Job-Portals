@@ -1,9 +1,13 @@
+// src/pages/company/Companies.jsx
 import React, { useState, useEffect } from 'react'
-import { Search, Filter, Building, MapPin, Users, Globe, Briefcase } from 'lucide-react'
+import { Search, Building, MapPin, Users, Globe } from 'lucide-react'
 import { companyService } from '../services/companyService.js'
 import LoadingSpinner from '../components/common/LoadingSpinner.jsx'
+import { useAuth } from '../hooks/useAuth.js'
+import toast from 'react-hot-toast'
 
 const Companies = () => {
+  const { user } = useAuth() // current logged-in user (could be candidate or company)
   const [companies, setCompanies] = useState([])
   const [loading, setLoading] = useState(true)
   const [filters, setFilters] = useState({
@@ -13,46 +17,139 @@ const Companies = () => {
     location: ''
   })
 
+  // set of company ids that current user is following
+  const [followingSet, setFollowingSet] = useState(new Set())
+  // loading state per company id for follow/unfollow requests
+  const [loadingFollowIds, setLoadingFollowIds] = useState(new Set())
+
   useEffect(() => {
     loadCompanies()
+    // initialize followingSet from user profile (if available)
+    initFollowingFromUser()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
- 
-const loadCompanies = async () => {
-  try {
-    const response = await companyService.getCompaniesPublic(filters)
-    console.log("Companies API response:", response.data)
+  useEffect(() => {
+    // if user object changes (login/logout), re-init following list
+    initFollowingFromUser()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user])
 
-    // adjust here to match your backend response
-    if (response.data?.companies) {
-      setCompanies(response.data.companies)
-    } else if (response.data?.data?.companies) {
-      setCompanies(response.data.data.companies)
-    } else {
-      setCompanies([])
+  const initFollowingFromUser = () => {
+    try {
+      if (!user) {
+        setFollowingSet(new Set())
+        return
+      }
+      // user.followingCompanies may be array of ids or array of objects; handle both
+      const raw = user.followingCompanies || user.following || []
+      const ids = raw.map(it => (typeof it === 'string' ? it : (it._id || it.id))).filter(Boolean)
+      setFollowingSet(new Set(ids))
+    } catch (err) {
+      setFollowingSet(new Set())
     }
-  } catch (error) {
-    console.error('Failed to load companies:', error)
-    setCompanies([])
+  }
+
+  const loadCompanies = async () => {
+    try {
+      const response = await companyService.getCompaniesPublic(filters)
+      console.log('Companies API response:', response)
+      // support a few shapes the backend might return
+      if (response?.data?.companies) {
+        setCompanies(response.data.companies)
+      } else if (response?.data?.data?.companies) {
+        setCompanies(response.data.data.companies)
+      } else if (response?.data) {
+        // if response.data is already the array / object
+        // try to detect companies array directly
+        if (Array.isArray(response.data)) setCompanies(response.data)
+        else setCompanies(response.data.companies || [])
+      } else {
+        setCompanies([])
+      }
+    } catch (error) {
+      console.error('Failed to load companies:', error)
+      setCompanies([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const isFollowing = (companyId) => {
+    return followingSet.has(companyId)
+  }
+
+  const setFollowLoading = (companyId, value) => {
+    setLoadingFollowIds(prev => {
+      const copy = new Set(prev)
+      if (value) copy.add(companyId)
+      else copy.delete(companyId)
+      return copy
+    })
+  }
+
+const handleToggleFollow = async (companyId) => {
+  if (!user) {
+    toast.error('Please login to follow companies.');
+    return;
+  }
+
+  if (loadingFollowIds.has(companyId)) return;
+
+  const currentlyFollowing = isFollowing(companyId);
+
+  // set loading UI
+  setFollowLoading(companyId, true);
+
+  try {
+    let resp;
+    if (currentlyFollowing) {
+      resp = await companyService.unfollowCompany(companyId);
+      // resp is response.data due to interceptor
+      if (resp?.success) {
+        // update client state
+        setFollowingSet(prev => {
+          const copy = new Set(prev);
+          copy.delete(companyId);
+          return copy;
+        });
+        toast.success(resp.message || 'Unfollowed company');
+      } else {
+        toast.error(resp?.message || 'Failed to unfollow');
+      }
+    } else {
+      resp = await companyService.followCompany(companyId);
+      if (resp?.success) {
+        setFollowingSet(prev => {
+          const copy = new Set(prev);
+          copy.add(companyId);
+          return copy;
+        });
+        toast.success(resp.message || 'Following company');
+      } else {
+        toast.error(resp?.message || 'Failed to follow');
+      }
+    }
+  } catch (err) {
+    console.error('Follow/unfollow error', err);
+    toast.error(err?.response?.data?.message || 'Something went wrong');
   } finally {
-    setLoading(false)
+    setFollowLoading(companyId, false);
   }
 }
 
 
-
-
   const filteredCompanies = companies.filter(company => {
-    const matchesSearch = !filters.search || 
+    const matchesSearch = !filters.search ||
       company.name.toLowerCase().includes(filters.search.toLowerCase()) ||
       company.industry?.toLowerCase().includes(filters.search.toLowerCase()) ||
       company.bio?.toLowerCase().includes(filters.search.toLowerCase())
-    
+
     const matchesIndustry = !filters.industry || company.industry === filters.industry
     const matchesSize = !filters.size || company.size === filters.size
-    const matchesLocation = !filters.location || 
+    const matchesLocation = !filters.location ||
       company.location?.toLowerCase().includes(filters.location.toLowerCase())
-    
+
     return matchesSearch && matchesIndustry && matchesSize && matchesLocation
   })
 
@@ -88,6 +185,7 @@ const loadCompanies = async () => {
               />
             </div>
           </div>
+
           <select
             value={filters.industry}
             onChange={(e) => setFilters({ ...filters, industry: e.target.value })}
@@ -98,6 +196,7 @@ const loadCompanies = async () => {
               <option key={industry} value={industry}>{industry}</option>
             ))}
           </select>
+
           <select
             value={filters.size}
             onChange={(e) => setFilters({ ...filters, size: e.target.value })}
@@ -109,6 +208,7 @@ const loadCompanies = async () => {
             ))}
           </select>
         </div>
+
         <div className="mt-4">
           <select
             value={filters.location}
@@ -125,53 +225,66 @@ const loadCompanies = async () => {
 
       {/* Companies Grid */}
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredCompanies.map((company) => (
-          <div key={company._id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
-            <div className="flex items-center space-x-3 mb-4">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-semibold">
-                {company.name.charAt(0)}
-              </div>
-              <div>
-                <h3 className="font-semibold text-gray-900">{company.name}</h3>
-                <p className="text-sm text-gray-600">{company.industry}</p>
-              </div>
-            </div>
-            
-            <div className="space-y-2 text-sm text-gray-600 mb-4">
-              {company.location && (
-                <div className="flex items-center">
-                  <MapPin size={14} className="mr-2" />
-                  {company.location}
-                </div>
-              )}
-              {company.size && (
-                <div className="flex items-center">
-                  <Users size={14} className="mr-2" />
-                  {company.size} employees
-                </div>
-              )}
-              {company.website && (
-                <div className="flex items-center">
-                  <Globe size={14} className="mr-2" />
-                  <a href={company.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                    Visit Website
-                  </a>
-                </div>
-              )}
-            </div>
+        {filteredCompanies.map((company) => {
+          const cid = company._id || company.id
+          const following = isFollowing(cid)
+          const isLoadingFollow = loadingFollowIds.has(cid)
 
-            <p className="text-gray-700 text-sm mb-4 line-clamp-2">{company.bio}</p>
+          return (
+            <div key={cid} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-semibold">
+                  {company.name?.charAt(0) ?? 'C'}
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900">{company.name}</h3>
+                  <p className="text-sm text-gray-600">{company.industry}</p>
+                </div>
+              </div>
 
-            <div className="flex space-x-2">
-              <button className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 text-sm">
-                Follow
-              </button>
-              <button className="flex-1 border border-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-50 text-sm">
-                View Jobs
-              </button>
+              <div className="space-y-2 text-sm text-gray-600 mb-4">
+                {company.location && (
+                  <div className="flex items-center">
+                    <MapPin size={14} className="mr-2" />
+                    {company.location}
+                  </div>
+                )}
+                {company.size && (
+                  <div className="flex items-center">
+                    <Users size={14} className="mr-2" />
+                    {company.size} employees
+                  </div>
+                )}
+                {company.website && (
+                  <div className="flex items-center">
+                    <Globe size={14} className="mr-2" />
+                    <a href={company.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                      Visit Website
+                    </a>
+                  </div>
+                )}
+              </div>
+
+              <p className="text-gray-700 text-sm mb-4 line-clamp-2">{company.bio}</p>
+
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => handleToggleFollow(cid)}
+                  disabled={isLoadingFollow}
+                  className={`flex-1 py-2 px-4 rounded-lg text-sm ${
+                    following ? 'bg-gray-300 text-gray-700 cursor-default' : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
+                >
+                  {isLoadingFollow ? 'Processing...' : (following ? 'Following' : 'Follow')}
+                </button>
+
+                <button className="flex-1 border border-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-50 text-sm">
+                  View Jobs
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       {filteredCompanies.length === 0 && (
