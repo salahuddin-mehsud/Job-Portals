@@ -38,16 +38,21 @@ export const SocketProvider = ({ children }) => {
     console.log('🔄 Setting up socket connection for user:', user._id)
 
     // Connect socket with token
-    socketService.connect(token)
+    const socket = socketService.connect(token)
 
     // Socket event listeners
     const handleConnect = () => {
       console.log('✅ Socket connected successfully')
       setIsConnected(true)
+      
+      // Join user room after connection
+      if (user._id) {
+        socketService.emit('join', user._id)
+      }
     }
 
-    const handleDisconnect = () => {
-      console.log('🔴 Socket disconnected')
+    const handleDisconnect = (reason) => {
+      console.log('🔴 Socket disconnected:', reason)
       setIsConnected(false)
     }
 
@@ -62,12 +67,13 @@ export const SocketProvider = ({ children }) => {
       setUnreadCount(prev => prev + 1)
     }
 
-    const handleNotificationRead = (notification) => {
+    const handleNotificationRead = (notificationId) => {
       setNotifications(prev =>
         prev.map(notif =>
-          notif._id === notification._id ? notification : notif
+          notif._id === notificationId ? { ...notif, read: true } : notif
         )
       )
+      setUnreadCount(prev => Math.max(0, prev - 1))
     }
 
     const handleUnreadCount = (count) => {
@@ -138,26 +144,56 @@ export const SocketProvider = ({ children }) => {
       socketService.off('online_users', handleOnlineUsers)
       socketService.off('user_typing', handleUserTyping)
       socketService.off('user_stop_typing', handleUserStopTyping)
+      
+      // Don't disconnect socket here to maintain connection across route changes
+      // Only disconnect when logging out (handled in AuthContext)
     }
   }, [isAuthenticated, user])
 
   const markNotificationAsRead = (notificationId) => {
-    socketService.emit('mark_notification_read', notificationId)
+    if (socketService.emit('mark_notification_read', notificationId)) {
+      // Optimistic update
+      setNotifications(prev =>
+        prev.map(notif =>
+          notif._id === notificationId ? { ...notif, read: true } : notif
+        )
+      )
+      setUnreadCount(prev => Math.max(0, prev - 1))
+    }
   }
 
   const markAllNotificationsAsRead = () => {
-    socketService.emit('mark_all_notifications_read')
+    if (socketService.emit('mark_all_notifications_read')) {
+      // Optimistic update
+      setNotifications(prev => prev.map(notif => ({ ...notif, read: true })))
+      setUnreadCount(0)
+    }
   }
 
   const sendTypingIndicator = (chatId) => {
     if (user && isConnected) {
-      socketService.emit('typing_start', { chatId, userId: user._id, userName: user.name })
+      socketService.emit('typing_start', { 
+        chatId, 
+        userId: user._id, 
+        userName: user.name 
+      })
     }
   }
 
   const stopTypingIndicator = (chatId) => {
     if (user && isConnected) {
-      socketService.emit('typing_stop', { chatId, userId: user._id, userName: user.name })
+      socketService.emit('typing_stop', { 
+        chatId, 
+        userId: user._id, 
+        userName: user.name 
+      })
+    }
+  }
+
+  const reconnect = () => {
+    const token = localStorage.getItem('token')
+    if (token) {
+      socketService.connect(token)
     }
   }
 
@@ -170,7 +206,9 @@ export const SocketProvider = ({ children }) => {
     markNotificationAsRead,
     markAllNotificationsAsRead,
     sendTypingIndicator,
-    stopTypingIndicator
+    stopTypingIndicator,
+    reconnect,
+    socket: socketService
   }
 
   return (

@@ -33,12 +33,33 @@ dotenv.config();
 
 const app = express();
 const httpServer = createServer(app);
+
+// Vercel-specific configuration
+const isVercel = process.env.VERCEL === '1';
+const PORT = process.env.PORT || 5000;
+
+// CORS configuration for production
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://your-app-name.vercel.app' // Replace with your actual Vercel domain after deployment
+];
+
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:3000',
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.indexOf(origin) === -1) {
+        const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+        return callback(new Error(msg), false);
+      }
+      return callback(null, true);
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
-  }
+  },
+  // Important for Vercel compatibility
+  transports: ['polling', 'websocket']
 });
 
 // Connect to database
@@ -46,11 +67,20 @@ connectDB();
 
 // Middleware
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
   credentials: true
 }));
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
 // Multer config - store file in memory (buffer), max size 5MB
 const storage = multer.memoryStorage();
 const upload = multer({
@@ -73,15 +103,29 @@ app.use('/api/posts', postRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/profiles', profileRoutes);
+
 // Health check route
 app.get('/api/health', (req, res) => {
   res.json({
     success: true,
     message: 'Server is running',
     timestamp: new Date().toISOString(),
-    version: '1.0.0'
+    version: '1.0.0',
+    environment: process.env.NODE_ENV
   });
 });
+
+// Serve static files from React app in production
+if (isVercel || process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '../client/dist')));
+  
+  // Handle client-side routing - serve index.html for all non-API routes
+  app.get('*', (req, res) => {
+    if (!req.path.startsWith('/api/')) {
+      res.sendFile(path.join(__dirname, '../client/dist/index.html'));
+    }
+  });
+}
 
 app.use((error, req, res, next) => {
   if (error instanceof multer.MulterError) {
@@ -124,7 +168,8 @@ app.post('/api/test-upload', upload.single('image'), async (req, res) => {
     });
   }
 });
-// Add this to your index.js temporarily for testing
+
+// Cloudinary debug route
 app.get('/api/debug-cloudinary', (req, res) => {
   const cloudinary = require('cloudinary').v2;
   
@@ -141,7 +186,8 @@ app.get('/api/debug-cloudinary', (req, res) => {
     config: cloudinary.config()
   });
 });
-// Then keep your existing error handlers:
+
+// Error handlers
 app.use(notFound);
 app.use(errorHandler);
 
@@ -218,15 +264,11 @@ io.on('connection', (socket) => {
   });
 });
 
-// Error handling
-app.use(notFound);
-app.use(errorHandler);
-
-const PORT = process.env.PORT || 5000;
-
+// Start server
 httpServer.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
   console.log(`🔗 Client URL: ${process.env.CLIENT_URL}`);
   console.log(`📊 Database: ${process.env.MONGODB_URI}`);
+  console.log(`⚡ Vercel: ${isVercel ? 'Yes' : 'No'}`);
 });
