@@ -4,6 +4,10 @@ import { userService } from '../../services/userService.js'
 import { searchService } from '../../services/searchService.js'
 import LoadingSpinner from '../../components/common/LoadingSpinner.jsx'
 import { useAuth } from '../../hooks/useAuth.js'
+import { Link } from 'react-router-dom'
+import Avatar from '../../components/common/Avatar.jsx'
+
+
 
 const CandidateConnections = () => {
   const [connections, setConnections] = useState([])
@@ -206,22 +210,27 @@ const CandidateConnections = () => {
                 <div key={connection._id || otherUser._id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
-                      <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
-                        {(otherUser?.name || 'U').charAt(0)}
-                      </div>
+                      <Avatar user={otherUser} size={48} />
+
                       <div>
-                        <h3 className="font-semibold text-gray-900">{otherUser.name}</h3>
-                        <p className="text-sm text-gray-600">{otherUser.bio}</p>
+                        <Link 
+  to={`/user/profile/${otherUser._id}`} 
+  className="font-semibold text-gray-900 hover:underline"
+>
+  {otherUser.name}
+</Link>
+<p className="text-sm text-gray-600">{otherUser.bio}</p>
+
                         <div className="flex items-center space-x-4 mt-1 text-xs text-gray-500">
                           {otherUser.location && (<span className="flex items-center"><MapPin size={12} className="mr-1" />{otherUser.location}</span>)}
                           {otherUser.skills && otherUser.skills.length > 0 && (<span className="flex items-center"><Briefcase size={12} className="mr-1" />{otherUser.skills.slice(0,2).join(', ')}</span>)}
                         </div>
                       </div>
                     </div>
-                    <button className="flex items-center px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+                    <Link to={'/messages'} className="flex items-center px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
                       <Mail size={16} className="mr-2" />
                       Message
-                    </button>
+                    </Link>
                   </div>
                 </div>
               )
@@ -250,12 +259,16 @@ const CandidateConnections = () => {
               return (
                 <div key={uid} className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
                   <div className="flex items-center space-x-3 mb-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
-                      {(u?.name || 'U').charAt(0)}
-                    </div>
+                   <Avatar user={u} size={40} />
                     <div>
-                      <h3 className="font-semibold text-sm">{u.name}</h3>
-                      <p className="text-xs text-gray-600 truncate">{u.bio}</p>
+                      <Link 
+  to={`/user/profile/${uid}`} 
+  className="font-semibold text-sm hover:underline"
+>
+  {u.name}
+</Link>
+<p className="text-xs text-gray-600 truncate">{u.bio}</p>
+
                     </div>
                   </div>
                   <button

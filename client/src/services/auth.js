@@ -10,37 +10,50 @@ export const authService = {
     return await api.post('/auth/register', userData)
   },
 
-  async getCurrentUser() {
+async getCurrentUser() {
   console.log('[authService] Checking current user...')
+
+  // Helper function to validate response
+  const isValidResponse = (response) => {
+    return response && response.success && response.data !== null && response.data !== undefined;
+  }
 
   try {
     console.log('[authService] Trying /users/profile...')
     const userRes = await api.get('/users/profile')
-    console.log('[authService] Success: user profile', userRes.data)
-    return userRes.data   // ✅ trust backend
-  } catch (err) {
-    console.error('[authService] /users/profile failed:', {
-      status: err.response?.status,
-      data: err.response?.data,
-      message: err.message,
-    })
-
-    try {
-      console.log('[authService] Trying /companies/profile...')
-      const companyRes = await api.get('/companies/profile')
-      console.log('[authService] Success: company profile', companyRes.data)
-      return companyRes.data   // ✅ trust backend
-    } catch (err2) {
-      console.error('[authService] /companies/profile failed:', {
-        status: err2.response?.status,
-        data: err2.response?.data,
-        message: err2.message,
-      })
-
-      console.error('[authService] Both profile checks failed → returning null')
-      return null
+    console.log('[authService] User profile response:', userRes)
+    
+    if (isValidResponse(userRes)) {
+      return { 
+        success: true, 
+        data: userRes.data,
+        userType: 'candidate'
+      }
     }
+    // If we get here, user profile was not valid - continue to company check
+  } catch (err) {
+    console.error('[authService] /users/profile failed:', err.message)
+    // Continue to company check
   }
+
+  try {
+    console.log('[authService] Trying /companies/profile...')
+    const companyRes = await api.get('/companies/profile')
+    console.log('[authService] Company profile response:', companyRes)
+    
+    if (isValidResponse(companyRes)) {
+      return { 
+        success: true, 
+        data: companyRes.data,
+        userType: 'company'
+      }
+    }
+  } catch (err2) {
+    console.error('[authService] /companies/profile failed:', err2.message)
+  }
+
+  console.error('[authService] Both profile checks failed → returning null')
+  return { success: false, data: null }
 },
 
   async verifyEmail(token) {
@@ -58,6 +71,14 @@ export const authService = {
   async updateProfile(profileData) {
     return await api.put('/users/profile', profileData)
   },
+
+  async uploadAvatar(file) {
+  const formData = new FormData()
+  formData.append('avatar', file)
+  return await api.post('/users/profile/avatar', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+},
 
   setToken(token) {
     console.log('[authService] Setting token:', token)

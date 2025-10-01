@@ -11,7 +11,7 @@ const jobSchema = new mongoose.Schema({
     max: { type: Number, required: true },
     currency: { type: String, default: 'USD' }
   },
-  employmentType: { type: String, enum: ['full-time', 'part-time', 'contract', 'internship'], required: true },
+  employmentType: { type: String, enum: ['full-time', 'part-time', 'contract', 'internship', 'remote'], required: true },
   category: { type: String, required: true },
   keywords: [{ type: String }],
   company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true },

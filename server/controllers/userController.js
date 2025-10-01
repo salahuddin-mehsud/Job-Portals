@@ -4,6 +4,8 @@ import Connection from '../models/Connection.js';
 import Notification from '../models/Notification.js';
 import { sanitizeUser, calculateMatchScore } from '../utils/helpers.js';
 import mongoose from 'mongoose';
+import { cloudinary } from '../config/cloudinary.js' 
+import Job from '../models/Job.js';
 
 export const getProfile = async (req, res, next) => {
   try {
@@ -73,7 +75,36 @@ export const getConnections = async (req, res, next) => {
 };
 
 
+export const uploadUserAvatar = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No file uploaded' })
+    }
 
+    // convert buffer -> data URI
+    const b64 = Buffer.from(req.file.buffer).toString('base64')
+    const dataURI = `data:${req.file.mimetype};base64,${b64}`
+
+    const result = await cloudinary.uploader.upload(dataURI, {
+      folder: 'proconnect/avatars',
+      resource_type: 'image',
+      overwrite: true
+    })
+
+    const avatarUrl = result.secure_url
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      { avatar: avatarUrl },
+      { new: true, select: '-password' }
+    )
+
+    return res.json({ success: true, data: updatedUser })
+  } catch (err) {
+    console.error('uploadUserAvatar error:', err)
+    next(err)
+  }
+}
 
 export const sendConnectionRequest = async (req, res) => {
   try {
@@ -286,6 +317,83 @@ export const searchUsers = async (req, res, next) => {
         currentPage: page,
         total
       }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Add these methods to userController.js
+
+export const saveJob = async (req, res, next) => {
+  try {
+    const { jobId } = req.params;
+
+    const user = await User.findById(req.user._id);
+    
+    // Check if job exists
+    const job = await Job.findById(jobId);
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        message: 'Job not found'
+      });
+    }
+
+    // Check if job is already saved
+    if (user.savedJobs.includes(jobId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Job already saved'
+      });
+    }
+
+    // Add job to saved jobs
+    user.savedJobs.push(jobId);
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Job saved successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const unsaveJob = async (req, res, next) => {
+  try {
+    const { jobId } = req.params;
+
+    const user = await User.findById(req.user._id);
+
+    // Remove job from saved jobs
+    user.savedJobs = user.savedJobs.filter(id => id.toString() !== jobId);
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Job removed from saved jobs'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getSavedJobs = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user._id)
+      .populate({
+        path: 'savedJobs',
+        populate: {
+          path: 'company',
+          select: 'name avatar industry location'
+        }
+      });
+
+    res.json({
+      success: true,
+      data: user.savedJobs
     });
   } catch (error) {
     next(error);

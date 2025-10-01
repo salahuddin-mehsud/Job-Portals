@@ -5,6 +5,9 @@ import { companyService } from '../services/companyService.js'
 import LoadingSpinner from '../components/common/LoadingSpinner.jsx'
 import { useAuth } from '../hooks/useAuth.js'
 import toast from 'react-hot-toast'
+import { Link } from 'react-router-dom'
+
+import Avatar from '../components/common/Avatar.jsx'
 
 const Companies = () => {
   const { user } = useAuth() // current logged-in user (could be candidate or company)
@@ -233,12 +236,17 @@ const handleToggleFollow = async (companyId) => {
           return (
             <div key={cid} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
               <div className="flex items-center space-x-3 mb-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-semibold">
-                  {company.name?.charAt(0) ?? 'C'}
-                </div>
+                <Avatar user={company} size={48} className="border" />
+
                 <div>
-                  <h3 className="font-semibold text-gray-900">{company.name}</h3>
-                  <p className="text-sm text-gray-600">{company.industry}</p>
+                  <Link 
+  to={`/company/profile/${cid}`} 
+  className="font-semibold text-gray-900 hover:underline"
+>
+  {company.name}
+</Link>
+<p className="text-sm text-gray-600">{company.industry}</p>
+
                 </div>
               </div>
 
@@ -278,9 +286,9 @@ const handleToggleFollow = async (companyId) => {
                   {isLoadingFollow ? 'Processing...' : (following ? 'Following' : 'Follow')}
                 </button>
 
-                <button className="flex-1 border border-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-50 text-sm">
+                <Link to={'/jobs'} className="flex-1 border border-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-50 text-sm">
                   View Jobs
-                </button>
+                </Link>
               </div>
             </div>
           )

@@ -4,6 +4,8 @@ import { Search, Menu, X, Briefcase, Users, Building, UserPlus } from 'lucide-re
 import { useAuth } from '../../hooks/useAuth.js'
 import NotificationBell from '../common/NotificationBell.jsx'
 import { userService } from '../../services/userService.js'
+import Avatar from '../common/Avatar.jsx'
+
 
 const Navbar = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
@@ -15,29 +17,24 @@ const Navbar = () => {
   const location = useLocation()
   const navigate = useNavigate()
 
-useEffect(() => {
-  if (isAuthenticated && user?._id) {
-    console.log('Loading pending requests for user:', user._id)
-    loadConnectionRequests()
+  useEffect(() => {
+    if (isAuthenticated && user?._id) {
+      loadConnectionRequests()
+    }
+  }, [isAuthenticated, user?._id])
+
+  const loadConnectionRequests = async () => {
+    try {
+      const resp = await userService.getPendingConnectionRequests()
+      setConnectionRequests(resp?.data ?? [])
+    } catch (err) {
+      console.error('Failed to load connection requests:', err)
+    }
   }
-}, [isAuthenticated, user?._id])
 
-const loadConnectionRequests = async () => {
-  try {
-    const resp = await userService.getPendingConnectionRequests()
-    console.log('Pending requests from API:', resp.data)
-    setConnectionRequests(resp?.data ?? [])
-  } catch (err) {
-    console.error('Failed to load connection requests:', err)
-  }
-}
-
-
-  // Respond to request (accept/reject)
   const respondToRequest = async (connectionId, action) => {
     try {
       await userService.respondConnectionRequest(connectionId, action)
-      // Remove request from state immediately
       setConnectionRequests(prev => prev.filter(req => req._id !== connectionId))
     } catch (err) {
       console.error('Failed to respond to request:', err)
@@ -61,17 +58,38 @@ const loadConnectionRequests = async () => {
   const navigation = [
     { name: 'Jobs', href: '/jobs', icon: Briefcase },
     { name: 'People', href: '/people', icon: Users },
+    { name: 'Posts', href: '/feeds', icon: Users },
     { name: 'Companies', href: '/companies', icon: Building },
   ]
 
+  // Helper: return profile URL for current user based on role
+  const getProfileHref = () => {
+    if (!user || !user._id) return '#'
+    if (user.role === 'company') {
+      return `/company/profile/${user._id}`
+    }
+    // default candidate
+    return `/user/profile/${user._id}`
+  }
+
+  // Build user menu dynamically so "Profile" points to the public profile URL
+  const profileHref = getProfileHref()
+
   const userNavigation = user?.role === 'candidate' ? [
     { name: 'Dashboard', href: '/candidate/dashboard' },
-    { name: 'My Profile', href: '/candidate/profile' },
+    { name: 'Profile', href: profileHref },
+    { name: 'Edit Profile', href: '/candidate/profile' },
+    { name: 'Posts', href: '/candidate/feed' },
     { name: 'Applications', href: '/candidate/applications' },
+    { name: 'Save Jobs', href: '/candidate/saved-jobs' },
+    
   ] : user?.role === 'company' ? [
     { name: 'Dashboard', href: '/company/dashboard' },
-    { name: 'Profile', href: '/company/profile' },
+    { name: 'Profile', href: profileHref },
+    { name: 'Edit Profile', href: '/company/profile' },
+    { name: 'Posts', href: '/company/feed' },
     { name: 'Job Postings', href: '/company/jobs' },
+
   ] : []
 
   return (
@@ -160,13 +178,8 @@ const loadConnectionRequests = async () => {
                         {connectionRequests.map((req) => (
                           <div key={req._id} className="flex items-center justify-between p-2 border-b border-gray-100">
                             <div className="flex items-center space-x-2">
-                              {req.requester?.avatar ? (
-                                <img src={req.requester.avatar} className="w-8 h-8 rounded-full" />
-                              ) : (
-                                <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-xs text-white">
-                                  {req.requester?.name?.charAt(0)}
-                                </div>
-                              )}
+                              <Avatar src={req.requester?.avatar} name={req.requester?.name} size="sm" />
+
                               <span className="text-sm text-gray-700">{req.requester?.name}</span>
                             </div>
                             <div className="flex space-x-1">
@@ -196,9 +209,8 @@ const loadConnectionRequests = async () => {
                     onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
                     className="flex items-center space-x-2 text-sm rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                   >
-                    <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
-                      {user?.name?.charAt(0) || 'U'}
-                    </div>
+                    <Avatar src={user?.avatar} name={user?.name} size="sm" className="mr-0" />
+
                     <span className="hidden md:block text-gray-700">{user?.name}</span>
                   </button>
 

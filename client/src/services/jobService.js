@@ -1,3 +1,4 @@
+// services/jobService.js
 import api from './api.js'
 
 export const jobService = {
@@ -10,10 +11,12 @@ export const jobService = {
   },
 
   async getJob(id) {
+    console.log("This is Job Data:id:", id)
     return await api.get(`/jobs/${id}`)
   },
 
   async createJob(jobData) {
+    console.log("This is Job Data", jobData)
     return await api.post('/jobs', jobData)
   },
 
@@ -37,5 +40,18 @@ export const jobService = {
         'Content-Type': 'multipart/form-data'
       }
     })
+  },
+
+  // New methods for saving jobs
+  async saveJob(jobId) {
+    return await api.post(`/users/save-job/${jobId}`)
+  },
+
+  async unsaveJob(jobId) {
+    return await api.delete(`/users/unsave-job/${jobId}`)
+  },
+
+  async getSavedJobs() {
+    return await api.get('/users/saved-jobs')
   }
 }

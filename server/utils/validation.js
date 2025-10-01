@@ -1,43 +1,32 @@
-import { body, validationResult } from 'express-validator';
+import { body } from 'express-validator';
 
-export const handleValidationErrors = (req, res, next) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({
-      success: false,
-      message: 'Validation failed',
-      errors: errors.array(),
-    });
-  }
-  next();
-};
-
-// Auth validations
+// Simple validation for registration
 export const registerValidation = [
   body('email').isEmail().normalizeEmail(),
   body('password').isLength({ min: 6 }),
   body('role').isIn(['candidate', 'company']),
 ];
 
+// Simple validation for login
 export const loginValidation = [
   body('email').isEmail().normalizeEmail(),
-  body('password').exists(),
+  body('password').notEmpty().withMessage('Password is required'),
 ];
 
-// User validations
+// User profile validation
 export const userProfileValidation = [
-  body('name').optional().trim().isLength({ min: 2 }),
-  body('bio').optional().trim().isLength({ max: 500 }),
-  body('skills').optional().isArray(),
+  body('name').optional().trim(),
+  body('bio').optional().trim(),
+  body('skills').optional(),
 ];
 
-// Job validations
+// Simplified job validation
 export const jobValidation = [
-  body('title').trim().isLength({ min: 5 }),
-  body('description').trim().isLength({ min: 10 }),
-  body('requirements').isArray(),
-  body('location').trim().isLength({ min: 2 }),
-  body('salaryRange.min').isNumeric(),
-  body('salaryRange.max').isNumeric(),
-  body('employmentType').isIn(['full-time', 'part-time', 'contract', 'internship']),
+  body('title').notEmpty().withMessage('Title is required'),
+  body('description').notEmpty().withMessage('Description is required'),
+  body('requirements').optional(),
+  body('location').notEmpty().withMessage('Location is required'),
+  body('salaryRange.min').optional().isNumeric(),
+  body('salaryRange.max').optional().isNumeric(),
+  body('employmentType').optional().isIn(['full-time', 'part-time', 'contract', 'internship']),
 ];

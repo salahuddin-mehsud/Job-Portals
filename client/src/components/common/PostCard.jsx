@@ -1,16 +1,25 @@
+// src/components/common/PostCard.jsx
 import React, { useState } from 'react'
-import { Heart, MessageCircle, Share, MoreHorizontal } from 'lucide-react'
-import { formatDistanceToNow } from 'date-fns'
-import { useAuth } from '../../hooks/useAuth.js'
+import { Heart, MessageCircle, Share, Trash2 } from 'lucide-react'
 import { postService } from '../../services/postService.js'
+import { useAuth } from '../../hooks/useAuth.js'
 import toast from 'react-hot-toast'
+import { Link } from 'react-router-dom'
+import Avatar from './Avatar.jsx'
 
-const PostCard = ({ post, onUpdate }) => {
+const PostCard = ({ post, onUpdate, showDelete = false }) => {
   const { user } = useAuth()
-  const [isLiked, setIsLiked] = useState(post.likes?.some(like => like.entity === user?._id))
-  const [likeCount, setLikeCount] = useState(post.likes?.length || 0)
+  const [isLiking, setIsLiking] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [showComments, setShowComments] = useState(false)
-  const [commentText, setCommentText] = useState('')
+  const [newComment, setNewComment] = useState('')
+  const [isCommenting, setIsCommenting] = useState(false)
+
+  // robust like detection (like.entity may be id or object)
+  const isLiked = !!(post.likes?.some((like) => {
+    const entityId = (like.entity && (like.entity._id || like.entity)).toString?.() || String(like.entity)
+    return user && entityId === user._id?.toString()
+  }))
 
   const handleLike = async () => {
     if (!user) {
@@ -18,148 +27,200 @@ const PostCard = ({ post, onUpdate }) => {
       return
     }
 
+    setIsLiking(true)
     try {
-      const response = await postService.likePost(post._id)
-      if (response.success) {
-        setIsLiked(!isLiked)
-        setLikeCount(prev => isLiked ? prev - 1 : prev + 1)
-        onUpdate?.()
-      }
+      await postService.likePost(post._id)
+      onUpdate?.()
     } catch (error) {
+      console.error('Failed to like post:', error)
       toast.error('Failed to like post')
+    } finally {
+      setIsLiking(false)
     }
   }
 
   const handleComment = async (e) => {
     e.preventDefault()
-    if (!commentText.trim()) return
+    if (!newComment.trim() || !user) return
 
+    setIsCommenting(true)
     try {
-      const response = await postService.commentOnPost(post._id, {
-        content: commentText
-      })
-
-      if (response.success) {
-        setCommentText('')
-        toast.success('Comment added')
-        onUpdate?.()
-      }
+      await postService.commentOnPost(post._id, { content: newComment })
+      setNewComment('')
+      onUpdate?.()
     } catch (error) {
+      console.error('Failed to add comment:', error)
       toast.error('Failed to add comment')
+    } finally {
+      setIsCommenting(false)
     }
   }
 
+  const handleDelete = async () => {
+    if (!window.confirm('Are you sure you want to delete this post?')) return
+
+    setIsDeleting(true)
+    try {
+      await postService.deletePost(post._id)
+      onUpdate?.()
+      toast.success('Post deleted successfully')
+    } catch (error) {
+      console.error('Failed to delete post:', error)
+      toast.error('Failed to delete post')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const formatTime = (dateString) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffInHours = (now - date) / (1000 * 60 * 60)
+
+    if (diffInHours < 1) {
+      return `${Math.max(1, Math.floor(diffInHours * 60))}m ago`
+    } else if (diffInHours < 24) {
+      return `${Math.floor(diffInHours)}h ago`
+    } else {
+      return date.toLocaleDateString()
+    }
+  }
+
+  // defensive guards
+  const author = post.author || {}
+  const authorId = (author._id || author.id || '').toString()
+  const authorRole = author.role === 'company' ? 'company' : 'candidate'
+
   return (
-    <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
-      <div className="p-6">
-        {/* Post Header */}
-        <div className="flex justify-between items-start mb-4">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
-              {post.author?.name?.charAt(0) || 'U'}
-            </div>
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+      {/* Post Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center space-x-3">
+          <Link
+            to={authorRole === 'company' ? `/company/profile/${authorId}` : `/user/profile/${authorId}`}
+            className="flex items-center space-x-3 hover:opacity-90"
+          >
+            <Avatar src={author.avatar} name={author.name} size="md" />
             <div>
-              <h4 className="font-semibold text-gray-900">{post.author?.name}</h4>
+              <h3 className="font-semibold text-gray-900">{author.name || 'Unknown'}</h3>
               <p className="text-sm text-gray-500">
-                {formatDistanceToNow(new Date(post.createdAt))} ago
+                {authorRole === 'company' ? 'Company' : 'Professional'} • {formatTime(post.createdAt)}
               </p>
             </div>
-          </div>
-          <button className="p-2 hover:bg-gray-100 rounded-full">
-            <MoreHorizontal size={16} />
-          </button>
+          </Link>
         </div>
 
-        {/* Post Content */}
-        <p className="text-gray-800 mb-4 whitespace-pre-wrap">{post.content}</p>
+        {showDelete && user && (authorId === user._id?.toString()) && (
+          <button
+            onClick={handleDelete}
+            disabled={isDeleting}
+            className="p-2 text-gray-400 hover:text-red-600 rounded-lg hover:bg-gray-100"
+          >
+            <Trash2 size={16} />
+          </button>
+        )}
+      </div>
 
-        {/* Post Media */}
-        {post.media && post.media.length > 0 && (
-          <div className="grid grid-cols-2 gap-2 mb-4">
-            {post.media.map((media, index) => (
+      {/* Post Content */}
+      <div className="mb-4">
+        <p className="text-gray-900 whitespace-pre-wrap">{post.content}</p>
+      </div>
+
+      {/* Post Media */}
+      {post.media && post.media.length > 0 && (
+        <div className="mb-4">
+          <div className={`grid gap-2 ${post.media.length === 1 ? 'grid-cols-1' : post.media.length === 2 ? 'grid-cols-2' : 'grid-cols-2'}`}>
+            {post.media.map((mediaUrl, index) => (
               <img
                 key={index}
-                src={media}
+                src={typeof mediaUrl === 'string' ? mediaUrl : mediaUrl.url || ''}
                 alt={`Post media ${index + 1}`}
-                className="rounded-lg object-cover w-full h-48"
+                className="w-full h-48 object-cover rounded-lg"
               />
             ))}
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Post Stats */}
-        <div className="flex justify-between text-sm text-gray-500 mb-4">
-          <span>{likeCount} likes</span>
+      {/* Post Stats */}
+      <div className="flex items-center justify-between text-sm text-gray-500 mb-4">
+        <div className="flex items-center space-x-4">
+          <span>{post.likes?.length || 0} likes</span>
           <span>{post.comments?.length || 0} comments</span>
         </div>
+      </div>
 
-        {/* Post Actions */}
-        <div className="flex border-t border-b border-gray-200 py-2">
-          <button
-            onClick={handleLike}
-            className={`flex-1 flex items-center justify-center py-2 rounded-lg transition-colors ${
-              isLiked ? 'text-red-600' : 'text-gray-600 hover:text-red-600'
-            }`}
-          >
-            <Heart size={18} className={isLiked ? 'fill-current' : ''} />
-            <span className="ml-2">Like</span>
-          </button>
-          <button
-            onClick={() => setShowComments(!showComments)}
-            className="flex-1 flex items-center justify-center py-2 text-gray-600 hover:text-blue-600 rounded-lg transition-colors"
-          >
-            <MessageCircle size={18} />
-            <span className="ml-2">Comment</span>
-          </button>
-          <button className="flex-1 flex items-center justify-center py-2 text-gray-600 hover:text-green-600 rounded-lg transition-colors">
-            <Share size={18} />
-            <span className="ml-2">Share</span>
-          </button>
-        </div>
+      {/* Post Actions */}
+      <div className="flex border-t border-gray-200 pt-4">
+        <button
+          onClick={handleLike}
+          disabled={isLiking}
+          className={`flex-1 flex items-center justify-center py-2 rounded-lg transition-colors ${isLiked ? 'text-red-600 bg-red-50' : 'text-gray-600 hover:bg-gray-50'}`}
+        >
+          <Heart size={18} className={isLiked ? 'fill-current' : ''} />
+          <span className="ml-2">Like</span>
+        </button>
 
-        {/* Comments Section */}
-        {showComments && (
-          <div className="mt-4">
-            {/* Add Comment */}
-            <form onSubmit={handleComment} className="flex space-x-2 mb-4">
+        <button
+          onClick={() => setShowComments(!showComments)}
+          className="flex-1 flex items-center justify-center py-2 text-gray-600 rounded-lg hover:bg-gray-50"
+        >
+          <MessageCircle size={18} />
+          <span className="ml-2">Comment</span>
+        </button>
+
+        <button className="flex-1 flex items-center justify-center py-2 text-gray-600 rounded-lg hover:bg-gray-50">
+          <Share size={18} />
+          <span className="ml-2">Share</span>
+        </button>
+      </div>
+
+      {/* Comments Section */}
+      {showComments && (
+        <div className="mt-4 border-t border-gray-200 pt-4">
+          {/* Add Comment */}
+          <form onSubmit={handleComment} className="mb-4">
+            <div className="flex space-x-2">
               <input
                 type="text"
-                value={commentText}
-                onChange={(e) => setCommentText(e.target.value)}
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
                 placeholder="Write a comment..."
-                className="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-blue-500"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
+                disabled={isCommenting}
               />
               <button
                 type="submit"
-                disabled={!commentText.trim()}
-                className="px-4 py-2 bg-blue-600 text-white rounded-full disabled:bg-gray-300 disabled:cursor-not-allowed"
+                disabled={!newComment.trim() || isCommenting}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed"
               >
-                Post
+                {isCommenting ? 'Posting...' : 'Post'}
               </button>
-            </form>
+            </div>
+          </form>
 
-            {/* Comments List */}
-            <div className="space-y-3">
-              {post.comments?.map((comment) => (
+          {/* Comments List */}
+          <div className="space-y-3">
+            {post.comments?.map((comment) => {
+              const cAuthor = comment.author || {}
+              return (
                 <div key={comment._id} className="flex space-x-3">
-                  <div className="w-8 h-8 bg-gray-300 rounded-full flex-shrink-0"></div>
+                  <Avatar src={cAuthor.avatar} name={cAuthor.name} size="sm" />
                   <div className="flex-1">
                     <div className="bg-gray-100 rounded-lg p-3">
-                      <p className="font-medium text-sm">{comment.author?.name}</p>
-                      <p className="text-gray-700">{comment.content}</p>
-                    </div>
-                    <div className="flex space-x-3 text-xs text-gray-500 mt-1">
-                      <span>{formatDistanceToNow(new Date(comment.createdAt))} ago</span>
-                      <button className="hover:text-gray-700">Like</button>
-                      <button className="hover:text-gray-700">Reply</button>
+                      <div className="flex items-center space-x-2 mb-1">
+                        <span className="font-semibold text-sm">{cAuthor.name || 'Unknown'}</span>
+                        <span className="text-xs text-gray-500">{formatTime(comment.createdAt)}</span>
+                      </div>
+                      <p className="text-sm text-gray-900">{comment.content}</p>
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
+              )
+            })}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -2,7 +2,6 @@ import React, { createContext, useContext, useEffect, useState } from 'react'
 import { socketService } from '../services/socket.js'
 import { useAuth } from './AuthContext.jsx'
 
-// ✅ Named export so you can import { SocketContext }
 export const SocketContext = createContext()
 
 export const useSocket = () => {
@@ -18,73 +17,127 @@ export const SocketProvider = ({ children }) => {
   const [unreadCount, setUnreadCount] = useState(0)
   const [onlineUsers, setOnlineUsers] = useState(new Set())
   const [typingUsers, setTypingUsers] = useState({})
+  const [isConnected, setIsConnected] = useState(false)
   const { user, isAuthenticated } = useAuth()
 
   useEffect(() => {
-    if (!isAuthenticated || !user) return
+    if (!isAuthenticated || !user) {
+      console.log('Not authenticated, disconnecting socket')
+      socketService.disconnect()
+      setIsConnected(false)
+      setOnlineUsers(new Set())
+      return
+    }
+
+    const token = localStorage.getItem('token')
+    if (!token) {
+      console.warn('No token found for socket connection')
+      return
+    }
+
+    console.log('🔄 Setting up socket connection for user:', user._id)
+
+    // Connect socket with token
+    socketService.connect(token)
 
     // Socket event listeners
-    socketService.on('connect', () => {
-      console.log('Connected to server')
-    })
+    const handleConnect = () => {
+      console.log('✅ Socket connected successfully')
+      setIsConnected(true)
+    }
 
-    socketService.on('disconnect', () => {
-      console.log('Disconnected from server')
-    })
+    const handleDisconnect = () => {
+      console.log('🔴 Socket disconnected')
+      setIsConnected(false)
+    }
 
-    socketService.on('new_notification', (notification) => {
+    const handleConnectError = (error) => {
+      console.error('❌ Socket connection error:', error)
+      setIsConnected(false)
+    }
+
+    const handleNewNotification = (notification) => {
+      console.log('📢 New notification received:', notification)
       setNotifications(prev => [notification, ...prev])
       setUnreadCount(prev => prev + 1)
-    })
+    }
 
-    socketService.on('notification_marked_read', (notification) => {
+    const handleNotificationRead = (notification) => {
       setNotifications(prev =>
         prev.map(notif =>
           notif._id === notification._id ? notification : notif
         )
       )
-    })
+    }
 
-    socketService.on('unread_count', (count) => {
+    const handleUnreadCount = (count) => {
       setUnreadCount(count)
-    })
+    }
 
-    socketService.on('user_online', (userId) => {
-      setOnlineUsers(prev => new Set(prev.add(userId)))
-    })
+    const handleUserOnline = (userId) => {
+      console.log('🟢 User came online:', userId)
+      setOnlineUsers(prev => {
+        const newSet = new Set(prev)
+        newSet.add(userId)
+        return newSet
+      })
+    }
 
-    socketService.on('user_offline', (userId) => {
+    const handleUserOffline = (userId) => {
+      console.log('🔴 User went offline:', userId)
       setOnlineUsers(prev => {
         const newSet = new Set(prev)
         newSet.delete(userId)
         return newSet
       })
-    })
+    }
 
-    socketService.on('user_typing', (data) => {
+    const handleOnlineUsers = (userIds) => {
+      console.log('👥 Received online users list:', userIds)
+      setOnlineUsers(new Set(userIds))
+    }
+
+    const handleUserTyping = (data) => {
       setTypingUsers(prev => ({
         ...prev,
         [data.chatId]: [...(prev[data.chatId] || []).filter(id => id !== data.userId), data.userId]
       }))
-    })
+    }
 
-    socketService.on('user_stop_typing', (data) => {
+    const handleUserStopTyping = (data) => {
       setTypingUsers(prev => ({
         ...prev,
         [data.chatId]: (prev[data.chatId] || []).filter(id => id !== data.userId)
       }))
-    })
+    }
+
+    // Add event listeners
+    socketService.on('connect', handleConnect)
+    socketService.on('disconnect', handleDisconnect)
+    socketService.on('connect_error', handleConnectError)
+    socketService.on('new_notification', handleNewNotification)
+    socketService.on('notification_marked_read', handleNotificationRead)
+    socketService.on('unread_count', handleUnreadCount)
+    socketService.on('user_online', handleUserOnline)
+    socketService.on('user_offline', handleUserOffline)
+    socketService.on('online_users', handleOnlineUsers)
+    socketService.on('user_typing', handleUserTyping)
+    socketService.on('user_stop_typing', handleUserStopTyping)
 
     return () => {
-      socketService.off('connect')
-      socketService.off('disconnect')
-      socketService.off('new_notification')
-      socketService.off('notification_marked_read')
-      socketService.off('unread_count')
-      socketService.off('user_online')
-      socketService.off('user_offline')
-      socketService.off('user_typing')
-      socketService.off('user_stop_typing')
+      console.log('🧹 Cleaning up socket listeners')
+      // Clean up event listeners
+      socketService.off('connect', handleConnect)
+      socketService.off('disconnect', handleDisconnect)
+      socketService.off('connect_error', handleConnectError)
+      socketService.off('new_notification', handleNewNotification)
+      socketService.off('notification_marked_read', handleNotificationRead)
+      socketService.off('unread_count', handleUnreadCount)
+      socketService.off('user_online', handleUserOnline)
+      socketService.off('user_offline', handleUserOffline)
+      socketService.off('online_users', handleOnlineUsers)
+      socketService.off('user_typing', handleUserTyping)
+      socketService.off('user_stop_typing', handleUserStopTyping)
     }
   }, [isAuthenticated, user])
 
@@ -97,13 +150,13 @@ export const SocketProvider = ({ children }) => {
   }
 
   const sendTypingIndicator = (chatId) => {
-    if (user) {
+    if (user && isConnected) {
       socketService.emit('typing_start', { chatId, userId: user._id, userName: user.name })
     }
   }
 
   const stopTypingIndicator = (chatId) => {
-    if (user) {
+    if (user && isConnected) {
       socketService.emit('typing_stop', { chatId, userId: user._id, userName: user.name })
     }
   }
@@ -113,11 +166,11 @@ export const SocketProvider = ({ children }) => {
     unreadCount,
     onlineUsers,
     typingUsers,
+    isConnected,
     markNotificationAsRead,
     markAllNotificationsAsRead,
     sendTypingIndicator,
-    stopTypingIndicator,
-    isConnected: socketService.connected
+    stopTypingIndicator
   }
 
   return (

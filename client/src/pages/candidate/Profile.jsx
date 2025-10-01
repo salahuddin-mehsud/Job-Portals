@@ -1,4 +1,3 @@
-// src/pages/candidate/Profile.jsx
 import React, { useState, useEffect } from 'react'
 import { Camera, MapPin, Mail, Phone, Globe, Edit, Save, Plus } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth.js'
@@ -9,7 +8,9 @@ import toast from 'react-hot-toast'
 const CandidateProfile = () => {
   const { user, updateUser } = useAuth()
   const [loading, setLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [preview, setPreview] = useState(null)
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -35,10 +36,10 @@ const CandidateProfile = () => {
         education: user.education || [],
         experience: user.experience || []
       })
+      setPreview(user.avatar || null)
     }
   }, [user])
 
-  // Allowed fields to send to backend (must match userController.updateProfile)
   const ALLOWED_FIELDS = [
     'name',
     'bio',
@@ -50,35 +51,24 @@ const CandidateProfile = () => {
     'resume'
   ]
 
-  // Build payload from formData but only include allowed fields
   const buildPayload = (data) => {
     const payload = {}
-
-    // name & bio
     if (data.name !== undefined) payload.name = data.name
     if (data.bio !== undefined) payload.bio = data.bio
 
-    // skills: ensure array
     if (Array.isArray(data.skills)) {
       payload.skills = data.skills
     } else if (typeof data.skills === 'string' && data.skills.trim()) {
-      // If user stored as comma-separated in future, convert
       payload.skills = data.skills.split(',').map(s => s.trim()).filter(Boolean)
     }
 
-    // portfolio -> portfolioLinks array expected by backend
     if (data.portfolio && data.portfolio.trim()) {
       payload.portfolioLinks = [data.portfolio.trim()]
     }
 
-    // education & experience (send if present)
     if (Array.isArray(data.education)) payload.education = data.education
     if (Array.isArray(data.experience)) payload.experience = data.experience
 
-    // Note: avatar and resume not handled by UI here; leaving hooks for them
-    // If you later add avatar/resume upload, set payload.avatar / payload.resume appropriately
-
-    // Filter down to exactly ALLOWED_FIELDS (in case we added extras)
     const filtered = {}
     ALLOWED_FIELDS.forEach((key) => {
       if (payload[key] !== undefined) filtered[key] = payload[key]
@@ -91,11 +81,7 @@ const CandidateProfile = () => {
     setLoading(true)
     try {
       const payload = buildPayload(formData)
-      // Debug: see what we send
-      console.debug('Updating profile with payload:', payload)
-
       const response = await authService.updateProfile(payload)
-      // api wrapper returns the parsed object (response.success, response.data)
       if (response?.success) {
         updateUser(response.data)
         setEditing(false)
@@ -106,7 +92,6 @@ const CandidateProfile = () => {
       }
     } catch (error) {
       console.error('Profile update failed:', error)
-      // Axios errors often have `error.response`
       if (error?.response) {
         console.error('Server response:', error.response.data)
         toast.error(error.response.data?.message || 'Failed to update profile (server)')
@@ -115,6 +100,32 @@ const CandidateProfile = () => {
       }
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleAvatarSelect = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please upload an image file')
+      return
+    }
+    setUploading(true)
+    try {
+      const resp = await authService.uploadAvatar(file)
+      if (resp?.success) {
+        updateUser(resp.data)
+        setPreview(resp.data.avatar || null)
+        toast.success('Avatar updated')
+      } else {
+        toast.error(resp?.message || 'Upload failed')
+      }
+    } catch (err) {
+      console.error('User avatar upload error', err)
+      toast.error('Upload failed')
+    } finally {
+      setUploading(false)
+      e.target.value = ''
     }
   }
 
@@ -194,13 +205,35 @@ const CandidateProfile = () => {
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
         <div className="flex items-center space-x-6">
           <div className="relative">
-            <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-2xl font-semibold">
-              {user.name?.charAt(0) || 'U'}
-            </div>
+            {preview ? (
+              <img
+                src={preview}
+                alt="Avatar"
+                className="w-24 h-24 rounded-full object-cover border"
+              />
+            ) : (
+              <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-2xl font-semibold">
+                {user.name?.charAt(0) || 'U'}
+              </div>
+            )}
+
             {editing && (
-              <button className="absolute bottom-0 right-0 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white">
-                <Camera size={16} />
-              </button>
+              <>
+                <input
+                  id="userAvatarUpload"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleAvatarSelect}
+                />
+                <button
+                  className="absolute bottom-0 right-0 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white"
+                  onClick={() => document.getElementById('userAvatarUpload').click()}
+                  disabled={uploading}
+                >
+                  <Camera size={16} />
+                </button>
+              </>
             )}
           </div>
           <div className="flex-1">

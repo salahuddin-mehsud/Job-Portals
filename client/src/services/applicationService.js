@@ -1,3 +1,4 @@
+// src/services/applicationService.js
 import api from './api.js'
 
 export const applicationService = {
@@ -13,11 +14,25 @@ export const applicationService = {
     return await api.get(`/applications/${id}`)
   },
 
-  async updateApplicationStatus(id, data) {
-    return await api.patch(`/applications/${id}/status`, data)
+  // <-- Replace this function
+  async submitApplication(jobId, payload) {
+    // payload can be a FormData (file upload) or a plain object (JSON)
+    if (payload instanceof FormData) {
+      // axios will set appropriate multipart/form-data boundary
+      return await api.post(`/jobs/${jobId}/apply`, payload)
+    } else {
+      // plain JSON
+      return await api.post(`/jobs/${jobId}/apply`, payload)
+    }
   },
 
-  async withdrawApplication(id) {
-    return await api.delete(`/applications/${id}`)
+  async updateApplicationStatus(applicationId, statusData) {
+    return await api.patch(`/applications/${applicationId}/status`, statusData)
+  },
+
+  async withdrawApplication(applicationId) {
+    return await api.delete(`/applications/${applicationId}`)
   }
 }
+
+export default applicationService

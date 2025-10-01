@@ -14,7 +14,8 @@ import {
 
 import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validation.js';
-
+import { upload } from '../config/cloudinary.js'
+import { uploadCompanyAvatar } from '../controllers/companyController.js'
 const router = express.Router();
 router.get('/public', getAllCompanies)
 
@@ -25,7 +26,7 @@ router.put('/profile', updateProfile);
 router.get('/jobs', getCompanyJobs);
 router.get('/analytics', getCompanyAnalytics);
 router.get('/search/candidates', searchCandidates);
-
+router.post('/profile/avatar', authenticate, upload.single('avatar'), uploadCompanyAvatar)
 router.post('/:companyId/follow', followCompany);
 router.post('/:companyId/unfollow', unfollowCompany);
 router.get('/:companyId/followers', getCompanyFollowers);

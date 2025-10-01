@@ -1,14 +1,16 @@
+// pages/candidate/Feed.jsx
 import React, { useState, useEffect } from 'react'
-import { Plus, TrendingUp, Users } from 'lucide-react'
+import { Users } from 'lucide-react'
 import { postService } from '../../services/postService.js'
-import PostCard from '../../components/common/PostCard.jsx'
 import LoadingSpinner from '../../components/common/LoadingSpinner.jsx'
-
+import CreatePost from '../../components/common/CreatePost.jsx'
+import PostCard from '../../components/common/PostCard.jsx'
+import { useAuth } from '../../hooks/useAuth.js'
+import Avatar from '../../components/common/Avatar.jsx'
 const CandidateFeed = () => {
   const [posts, setPosts] = useState([])
-  const [newPost, setNewPost] = useState('')
   const [loading, setLoading] = useState(true)
-  const [creatingPost, setCreatingPost] = useState(false)
+  const { user } = useAuth()
 
   useEffect(() => {
     loadPosts()
@@ -16,7 +18,7 @@ const CandidateFeed = () => {
 
   const loadPosts = async () => {
     try {
-      const response = await postService.getPosts()
+      const response = await postService.getFeedPosts()
       if (response.success) {
         setPosts(response.data.posts)
       }
@@ -27,26 +29,8 @@ const CandidateFeed = () => {
     }
   }
 
-  const handleCreatePost = async (e) => {
-    e.preventDefault()
-    if (!newPost.trim()) return
-
-    setCreatingPost(true)
-    try {
-      const response = await postService.createPost({ content: newPost })
-      if (response.success) {
-        setPosts([response.data, ...posts])
-        setNewPost('')
-      }
-    } catch (error) {
-      console.error('Failed to create post:', error)
-    } finally {
-      setCreatingPost(false)
-    }
-  }
-
   const handlePostUpdate = () => {
-    loadPosts() // Refresh posts after interactions
+    loadPosts()
   }
 
   if (loading) {
@@ -55,87 +39,36 @@ const CandidateFeed = () => {
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Professional Feed</h1>
-          <p className="text-gray-600 mt-2">Stay updated with your network and industry news</p>
-        </div>
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-gray-900">Professional Feed</h1>
+        <p className="text-gray-600 mt-2">Stay updated with your network and industry news</p>
       </div>
 
-      {/* Create Post */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-        <form onSubmit={handleCreatePost}>
-          <textarea
-            value={newPost}
-            onChange={(e) => setNewPost(e.target.value)}
-            placeholder="Share an update, article, or achievement..."
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 resize-none"
-            rows={3}
-          />
-          <div className="flex justify-between items-center mt-4">
-            <div className="flex space-x-2">
-              <button
-                type="button"
-                className="p-2 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100"
-              >
-                <Plus size={20} />
-              </button>
-            </div>
-            <button
-              type="submit"
-              disabled={!newPost.trim() || creatingPost}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed"
-            >
-              {creatingPost ? 'Posting...' : 'Post'}
-            </button>
-          </div>
-        </form>
-      </div>
-
-      {/* Feed Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-          <div className="flex items-center">
-            <TrendingUp className="text-green-600" size={24} />
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-600">Trending in Tech</p>
-              <p className="text-lg font-semibold">AI & Machine Learning</p>
+       {user && (
+        <div className="bg-white p-4 rounded-lg shadow-sm mb-6">
+          <div className="flex items-start space-x-4">
+            <Avatar src={user.avatar} name={user.name} size="md" />
+            <div className="flex-1">
+              {/* keep CreatePost as before but pass user if you want */}
+              <CreatePost onPostCreated={handlePostUpdate} user={user} />
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-          <div className="flex items-center">
-            <Users className="text-blue-600" size={24} />
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-600">Network Activity</p>
-              <p className="text-lg font-semibold">12 new posts</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-          <div className="flex items-center">
-            <Plus className="text-purple-600" size={24} />
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-600">Your Impact</p>
-              <p className="text-lg font-semibold">45 connections</p>
-            </div>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Posts */}
       <div className="space-y-6">
         {posts.map(post => (
-          <PostCard key={post._id} post={post} onUpdate={handlePostUpdate} />
+          <PostCard key={post._id} post={post} onUpdate={handlePostUpdate} showDelete={true} />
         ))}
       </div>
 
       {posts.length === 0 && (
         <div className="text-center py-12">
           <Users className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-sm font-medium text-gray-900">No posts yet</h3>
+          <h3 className="mt-2 text-sm font-medium text-gray-900">No posts in your feed</h3>
           <p className="mt-1 text-sm text-gray-500">
-            Connect with people and companies to see posts in your feed.
+            {user ? 'Connect with people and companies to see posts in your feed.' : 'Please log in to see posts in your feed.'}
           </p>
         </div>
       )}

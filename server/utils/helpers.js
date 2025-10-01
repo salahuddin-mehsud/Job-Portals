@@ -3,26 +3,6 @@ import jwt from 'jsonwebtoken'
 /**
  * Generate JWT token
  */
-export const generateToken = (userId) => {
-  if (!process.env.JWT_SECRET) {
-    throw new Error('JWT_SECRET is not defined in environment variables')
-  }
-
-  return jwt.sign({ userId }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE || '7d', // default to 7 days if not set
-  })
-}
-
-/**
- * Verify JWT token
- */
-export const verifyToken = (token) => {
-  if (!process.env.JWT_SECRET) {
-    throw new Error('JWT_SECRET is not defined in environment variables')
-  }
-
-  return jwt.verify(token, process.env.JWT_SECRET)
-}
 
 /**
  * Generate 6-digit verification code
@@ -31,14 +11,34 @@ export const generateVerificationCode = () => {
   return Math.floor(100000 + Math.random() * 900000).toString()
 }
 
-/**
- * Remove sensitive fields from user object
- */
-export const sanitizeUser = (user) => {
-  const userObj = user.toObject ? user.toObject() : user
-  const { password, ...sanitizedUser } = userObj
-  return sanitizedUser
-}
+export const generateToken = (entity) => {
+  return jwt.sign(
+    {
+      userId: entity._id.toString(),
+      role: entity.role,
+      name: entity.name,
+      email: entity.email
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: '30d' }
+  );
+};
+
+export const verifyToken = (token) => {
+  return jwt.verify(token, process.env.JWT_SECRET);
+};
+
+export const sanitizeUser = (entity) => {
+  if (!entity) return null;
+  
+  const sanitized = { ...entity.toObject ? entity.toObject() : entity };
+  delete sanitized.password;
+  delete sanitized.resetPasswordToken;
+  delete sanitized.resetPasswordExpire;
+  delete sanitized.verificationToken;
+  
+  return sanitized;
+};
 
 /**
  * Paginate an array

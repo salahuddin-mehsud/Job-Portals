@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 const applicationSchema = new mongoose.Schema({
   job: { type: mongoose.Schema.Types.ObjectId, ref: 'Job', required: true },
   candidate: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  resume: { type: String }, // URL to resume file
+  resume: { type: String, default: null }, // URL to resume file
   coverLetter: { type: String },
   status: { type: String, enum: ['pending', 'viewed', 'interview', 'hired', 'rejected'], default: 'pending' },
   appliedAt: { type: Date, default: Date.now },

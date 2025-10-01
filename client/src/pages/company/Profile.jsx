@@ -1,4 +1,3 @@
-// src/pages/company/Profile.jsx
 import React, { useState, useEffect } from 'react'
 import { Camera, MapPin, Mail, Globe, Building, Users, Edit, Save } from 'lucide-react'
 import { useAuth } from '../../hooks/useAuth.js'
@@ -9,7 +8,9 @@ import toast from 'react-hot-toast'
 const CompanyProfile = () => {
   const { user, updateUser } = useAuth()
   const [loading, setLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [preview, setPreview] = useState(null)
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -43,6 +44,7 @@ const CompanyProfile = () => {
           facebook: ''
         }
       })
+      setPreview(user.avatar || null)
     }
   }, [user])
 
@@ -67,15 +69,9 @@ const CompanyProfile = () => {
   const handleSave = async () => {
     setLoading(true)
     try {
-      // Build payload with only allowed fields (this avoids 400 Invalid updates)
       const payload = buildPayload(formData)
-
-      // Call companyService.updateProfile (your company service)
       const response = await companyService.updateProfile(payload)
-
-      // `api` wrapper returns `.data` directly; response should be { success: true, data: company }
       if (response?.success) {
-        // Update context with latest company object
         updateUser(response.data)
         setEditing(false)
         toast.success('Company profile updated successfully!')
@@ -84,9 +80,7 @@ const CompanyProfile = () => {
         toast.error(response?.message || 'Failed to update profile')
       }
     } catch (error) {
-      // Better error logging to see backend message
       console.error('Profile update failed:', error)
-      // If axios throws, inspect error.response
       if (error?.response) {
         console.error('Server response data:', error.response.data)
         toast.error(error.response.data?.message || 'Failed to update profile (server rejected request)')
@@ -95,6 +89,35 @@ const CompanyProfile = () => {
       }
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleAvatarSelect = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    // optional: client-side size/type checks
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please upload an image file')
+      return
+    }
+    setUploading(true)
+    try {
+      const resp = await companyService.uploadAvatar(file)
+      if (resp?.success) {
+        // resp.data should be updated company
+        updateUser(resp.data)
+        setPreview(resp.data.avatar || null)
+        toast.success('Avatar updated')
+      } else {
+        toast.error(resp?.message || 'Upload failed')
+      }
+    } catch (err) {
+      console.error('Company avatar upload error', err)
+      toast.error('Upload failed')
+    } finally {
+      setUploading(false)
+      // clear file input value to allow same file reupload if needed
+      e.target.value = ''
     }
   }
 
@@ -140,15 +163,42 @@ const CompanyProfile = () => {
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
         <div className="flex items-center space-x-6">
           <div className="relative">
-            <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-2xl font-semibold">
-              {user.name?.charAt(0) || 'C'}
-            </div>
+            {/* Avatar or placeholder */}
+            {preview ? (
+              <img
+                src={preview}
+                alt="Avatar"
+                className="w-24 h-24 rounded-full object-cover border"
+              />
+            ) : (
+              <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-2xl font-semibold">
+                {user.name?.charAt(0) || 'C'}
+              </div>
+            )}
+
+            {/* Hidden file input */}
             {editing && (
-              <button className="absolute bottom-0 right-0 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white">
-                <Camera size={16} />
-              </button>
+              <>
+                <input
+                  id="companyAvatarUpload"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleAvatarSelect}
+                />
+                <button
+                  type="button"
+                  onClick={() => document.getElementById('companyAvatarUpload').click()}
+                  className="absolute bottom-0 right-0 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white"
+                  title={uploading ? 'Uploading...' : 'Change avatar'}
+                  disabled={uploading}
+                >
+                  <Camera size={16} />
+                </button>
+              </>
             )}
           </div>
+
           <div className="flex-1">
             {editing ? (
               <input

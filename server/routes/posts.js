@@ -5,9 +5,11 @@ import {
   getPost,
   likePost,
   commentOnPost,
-  deletePost
+  deletePost,
+  uploadImage
 } from '../controllers/postController.js';
 import { authenticate } from '../middleware/auth.js';
+import { upload } from '../config/cloudinary.js';
 
 const router = express.Router();
 
@@ -17,6 +19,7 @@ router.get('/:id', getPost);
 router.use(authenticate);
 
 router.post('/', createPost);
+router.post('/upload-image', upload.single('image'), uploadImage);
 router.post('/:id/like', likePost);
 router.post('/:id/comment', commentOnPost);
 router.delete('/:id', deletePost);

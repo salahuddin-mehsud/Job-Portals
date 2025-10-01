@@ -5,6 +5,10 @@ import Connection from '../models/Connection.js';
 import Notification from '../models/Notification.js';
 import User from '../models/User.js';
 import mongoose from 'mongoose';
+import { cloudinary } from '../config/cloudinary.js' 
+
+
+
 export const getProfile = async (req, res, next) => {
   try {
     const company = await Company.findById(req.user._id)
@@ -48,6 +52,36 @@ export const updateProfile = async (req, res, next) => {
     next(error);
   }
 };
+
+export const uploadCompanyAvatar = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No file uploaded' })
+    }
+
+    const b64 = Buffer.from(req.file.buffer).toString('base64')
+    const dataURI = `data:${req.file.mimetype};base64,${b64}`
+
+    const result = await cloudinary.uploader.upload(dataURI, {
+      folder: 'proconnect/avatars',
+      resource_type: 'image',
+      overwrite: true
+    })
+
+    const avatarUrl = result.secure_url
+
+    const updatedCompany = await Company.findByIdAndUpdate(
+      req.user._id,
+      { avatar: avatarUrl },
+      { new: true, select: '-password' }
+    )
+
+    return res.json({ success: true, data: updatedCompany })
+  } catch (err) {
+    console.error('uploadCompanyAvatar error:', err)
+    next(err)
+  }
+}
 
 export const getCompanyJobs = async (req, res, next) => {
   try {

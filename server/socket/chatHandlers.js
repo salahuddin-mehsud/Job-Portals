@@ -1,3 +1,4 @@
+// socket/chatHandlers.js
 import Chat from '../models/Chat.js';
 import Message from '../models/Message.js';
 import Notification from '../models/Notification.js';
@@ -7,6 +8,12 @@ export const chatHandlers = (socket, io) => {
   // Handle joining a chat room
   socket.on('join_chat', async (chatId) => {
     try {
+      // Check if socket is authenticated
+      if (!socket.userId) {
+        socket.emit('error', 'Not authenticated');
+        return;
+      }
+
       const chat = await Chat.findById(chatId);
       if (!chat) {
         socket.emit('error', 'Chat not found');
@@ -43,26 +50,21 @@ export const chatHandlers = (socket, io) => {
         }
       );
 
-      // Notify other participants that user is online
-      socket.to(chatId).emit('user_joined', {
-        userId: socket.userId,
-        userName: socket.userName
-      });
-
     } catch (error) {
+      console.error('Error joining chat:', error);
       socket.emit('error', error.message);
     }
-  });
-
-  // Handle leaving a chat room
-  socket.on('leave_chat', (chatId) => {
-    socket.leave(chatId);
-    console.log(`User ${socket.userId} left chat ${chatId}`);
   });
 
   // Handle sending a message
   socket.on('send_message', async (data) => {
     try {
+      // Check if socket is authenticated
+      if (!socket.userId) {
+        socket.emit('error', 'Not authenticated');
+        return;
+      }
+
       const { chatId, content, messageType = 'text' } = data;
 
       let chat = await Chat.findById(chatId);
@@ -96,12 +98,13 @@ export const chatHandlers = (socket, io) => {
       // Update chat's last message and activity
       chat.lastMessage = message._id;
       chat.lastActivity = new Date();
-      chat.unreadCount += 1;
       await chat.save();
 
-      // Emit to all participants in the chat
+      console.log(`Message sent in chat ${chatId} by user ${socket.userId}`);
+
+      // Emit to all participants in the chat room (including sender for confirmation)
       io.to(chatId).emit('new_message', {
-        message,
+        message: message.toObject(),
         chatId
       });
 
@@ -124,17 +127,20 @@ export const chatHandlers = (socket, io) => {
         });
         await notification.save();
 
-        // Send real-time notification
+        // Send real-time notification to the participant's personal room
         io.to(participant.entity.toString()).emit('new_notification', notification);
       }
 
     } catch (error) {
+      console.error('Error sending message:', error);
       socket.emit('error', error.message);
     }
   });
 
   // Handle typing indicators
   socket.on('typing_start', (data) => {
+    if (!socket.userId) return;
+    
     const { chatId } = data;
     socket.to(chatId).emit('user_typing', {
       userId: socket.userId,
@@ -144,6 +150,8 @@ export const chatHandlers = (socket, io) => {
   });
 
   socket.on('typing_stop', (data) => {
+    if (!socket.userId) return;
+    
     const { chatId } = data;
     socket.to(chatId).emit('user_stop_typing', {
       userId: socket.userId,
@@ -153,34 +161,42 @@ export const chatHandlers = (socket, io) => {
   });
 
   // Handle message read receipts
-  socket.on('mark_message_read', async (data) => {
+  socket.on('mark_messages_read', async (data) => {
     try {
-      const { messageId, chatId } = data;
+      if (!socket.userId) return;
 
-      await Message.findByIdAndUpdate(messageId, {
-        $addToSet: {
-          readBy: {
-            entity: socket.userId,
-            model: socket.userModel
+      const { chatId } = data;
+      
+      await Message.updateMany(
+        {
+          chat: chatId,
+          'readBy.entity': { $ne: socket.userId },
+          sender: { $ne: socket.userId }
+        },
+        {
+          $push: {
+            readBy: {
+              entity: socket.userId,
+              model: socket.userModel
+            }
           }
         }
-      });
+      );
 
-      // Notify other participants that message was read
-      socket.to(chatId).emit('message_read', {
-        messageId,
-        readerId: socket.userId,
-        readerName: socket.userName
-      });
-
+      console.log(`Messages marked as read for user ${socket.userId} in chat ${chatId}`);
     } catch (error) {
-      socket.emit('error', error.message);
+      console.error('Error marking messages as read:', error);
     }
   });
 
   // Handle chat creation
   socket.on('create_chat', async (data) => {
     try {
+      if (!socket.userId) {
+        socket.emit('error', 'Not authenticated');
+        return;
+      }
+
       const { participantId, participantModel } = data;
 
       // Check if chat already exists
@@ -211,6 +227,7 @@ export const chatHandlers = (socket, io) => {
       socket.join(chat._id.toString());
 
     } catch (error) {
+      console.error('Error creating chat:', error);
       socket.emit('error', error.message);
     }
   });

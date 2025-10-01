@@ -5,9 +5,10 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import jwt from 'jsonwebtoken';
 import connectDB from './config/database.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
-
+import profileRoutes from './routes/profiles.js';
 // Route imports
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
@@ -19,7 +20,7 @@ import chatRoutes from './routes/chats.js';
 import postRoutes from './routes/posts.js';
 import searchRoutes from './routes/search.js';
 import adminRoutes from './routes/admin.js';
-
+import multer from 'multer';
 // Socket imports
 import { chatHandlers } from './socket/chatHandlers.js';
 import { notificationHandlers } from './socket/notificationHandlers.js';
@@ -50,6 +51,12 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Multer config - store file in memory (buffer), max size 5MB
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+});
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -65,7 +72,7 @@ app.use('/api/chats', chatRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/admin', adminRoutes);
-
+app.use('/api/profiles', profileRoutes);
 // Health check route
 app.get('/api/health', (req, res) => {
   res.json({
@@ -76,21 +83,138 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Socket.io connection handling
+app.use((error, req, res, next) => {
+  if (error instanceof multer.MulterError) {
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({
+        success: false,
+        message: 'File too large. Maximum size is 5MB.'
+      });
+    }
+  }
+  next(error);
+});
+
+// Simple test upload route
+app.post('/api/test-upload', upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No file' });
+    }
+
+    const { cloudinary } = await import('./config/cloudinary.js');
+    
+    const b64 = Buffer.from(req.file.buffer).toString('base64');
+    const dataURI = "data:" + req.file.mimetype + ";base64," + b64;
+
+    const result = await cloudinary.uploader.upload(dataURI, {
+      folder: 'proconnect-test'
+    });
+
+    res.json({ 
+      success: true, 
+      message: 'Upload test successful', 
+      url: result.secure_url 
+    });
+  } catch (error) {
+    console.error('Test upload error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Test upload failed: ' + error.message 
+    });
+  }
+});
+// Add this to your index.js temporarily for testing
+app.get('/api/debug-cloudinary', (req, res) => {
+  const cloudinary = require('cloudinary').v2;
+  
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+  });
+
+  res.json({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY ? '***' + process.env.CLOUDINARY_API_KEY.slice(-4) : 'Not set',
+    api_secret: process.env.CLOUDINARY_API_SECRET ? '***' + process.env.CLOUDINARY_API_SECRET.slice(-4) : 'Not set',
+    config: cloudinary.config()
+  });
+});
+// Then keep your existing error handlers:
+app.use(notFound);
+app.use(errorHandler);
+
+// Store online users in memory (for simplicity)
+const onlineUsers = new Set();
+
+// Helper function to get online user IDs
+function getOnlineUserIds() {
+  return Array.from(onlineUsers);
+}
+
+// Socket.io connection handling with authentication
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
-  // Set up chat handlers
-  chatHandlers(socket, io);
+  // Extract token from handshake
+  const token = socket.handshake.auth.token;
   
-  // Set up notification handlers and get sendNotification function
-  const { sendNotification } = notificationHandlers(socket, io);
+  if (!token) {
+    console.log('No token provided for socket connection');
+    socket.emit('error', 'No token provided');
+    socket.disconnect();
+    return;
+  }
 
-  // Make sendNotification available to the socket for external use
-  socket.sendNotification = sendNotification;
+  try {
+    // Verify token and extract user info
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    
+    // Check if we have the required user info
+    if (!decoded.userId) {
+      console.log('Token missing userId');
+      socket.emit('error', 'Invalid token: missing userId');
+      socket.disconnect();
+      return;
+    }
 
-  socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+    // Set socket user information from token
+    socket.userId = decoded.userId;
+    socket.userModel = decoded.role === 'company' ? 'Company' : 'User';
+    socket.userName = decoded.name || 'User';
+    
+    console.log(`Socket authenticated for user: ${socket.userId} (${socket.userModel})`);
+
+    // Add user to online users
+    socket.join(socket.userId);
+    onlineUsers.add(socket.userId);
+    
+    // Broadcast that this user is now online
+    socket.broadcast.emit('user_online', socket.userId);
+
+    // Send current online users to this socket
+    socket.emit('online_users', getOnlineUserIds());
+
+    // Set up handlers
+    chatHandlers(socket, io);
+    notificationHandlers(socket, io);
+
+    console.log(`Online users: ${getOnlineUserIds().length}`);
+
+  } catch (error) {
+    console.error('Socket authentication failed:', error.message);
+    socket.emit('error', 'Authentication failed: ' + error.message);
+    socket.disconnect();
+    return;
+  }
+
+  socket.on('disconnect', (reason) => {
+    console.log('User disconnected:', socket.id, 'Reason:', reason);
+    if (socket.userId) {
+      onlineUsers.delete(socket.userId);
+      socket.broadcast.emit('user_offline', socket.userId);
+    }
   });
 });
 
@@ -106,10 +230,3 @@ httpServer.listen(PORT, () => {
   console.log(`🔗 Client URL: ${process.env.CLIENT_URL}`);
   console.log(`📊 Database: ${process.env.MONGODB_URI}`);
 });
-
-// Export sendNotification for use in controllers
-export const getSendNotification = () => {
-  return (notificationData) => {
-    io.emit('new_notification', notificationData);
-  };
-};

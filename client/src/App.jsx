@@ -9,13 +9,15 @@ import ChatWidget from './components/common/ChatWidget.jsx'
 import Companies from './pages/Companies.jsx'
 import NewJob from './pages/company/NewJob.jsx'
 import Messages from './pages/Messages.jsx'
-// Auth Pages
+import SavedJobs from './pages/candidate/SavedJobs.jsx'
 import Login from './pages/auth/Login.jsx'
 import Register from './pages/auth/Register.jsx'
-
+import UserProfile from './pages/UserProfile.jsx'
+import CompanyProfilePublic from './pages/CompanyProfile.jsx'
 // Main Pages
 import Home from './pages/Home.jsx'
-
+// In App.jsx, add this import with your other page imports
+import JobDetails from './pages/JobDetails.jsx'
 // Candidate Pages
 import CandidateDashboard from './pages/candidate/Dashboard.jsx'
 import CandidateProfile from './pages/candidate/Profile.jsx'
@@ -37,7 +39,8 @@ import AdminDashboard from './pages/admin/Dashboard.jsx'
 import AdminUsers from './pages/admin/Users.jsx'
 import AdminCompanies from './pages/admin/Companies.jsx'
 import AdminJobs from './pages/admin/Jobs.jsx'
-
+import Feeds from './pages/Feeds.jsx'
+import { useEffect } from 'react'
 function App() {
   const { loading, isAuthenticated, user } = useAuth()
 
@@ -48,7 +51,10 @@ function App() {
       </div>
     )
   }
-
+useEffect(() => {
+  console.log('Current token:', localStorage.getItem('token'))
+  console.log('User authenticated:', isAuthenticated)
+}, [isAuthenticated])
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <Navbar />
@@ -153,16 +159,18 @@ function App() {
 
           {/* Shared Routes */}
           <Route path="/jobs" element={<CandidateJobs />} />
-          <Route path="/jobs/:id" element={
-            <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-              <h1 className="text-3xl font-bold text-gray-900 mb-6">Job Details</h1>
-              <p className="text-gray-600">Job details page coming soon...</p>
-            </div>
-          } />
+          <Route path="/jobs/:id" element={<JobDetails />} />
           <Route path="/people" element={<CandidateConnections />} />
           <Route path="/companies" element={<Companies />} />
           <Route path="/search" element={<Home />} />
- <Route path="/messages" element={<ProtectedRoute roles={['candidate','company']}><Messages /></ProtectedRoute>} />
+          <Route path="/feeds" element={<Feeds />} />
+          <Route path="/messages" element={<ProtectedRoute roles={['candidate','company']}><Messages /></ProtectedRoute>} />
+          <Route path="/user/profile/:userId" element={<UserProfile />} />
+          <Route path="/company/profile/:companyId" element={<CompanyProfilePublic />} />
+          <Route 
+  path="/candidate/saved-jobs" 
+  element={<ProtectedRoute roles={['candidate']}><SavedJobs /></ProtectedRoute>} 
+/>
           {/* Fallback Route */}
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

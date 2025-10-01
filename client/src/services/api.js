@@ -1,43 +1,49 @@
-// src/services/api.js
+// services/api.js
 import axios from 'axios'
 
 const API_URL = import.meta.env.VITE_API_URL || '/api'
 
 const api = axios.create({
   baseURL: API_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
   withCredentials: true
 })
 
-// helper to set / clear Authorization header synchronously
+// Export setAuthToken function
 export const setAuthToken = (token) => {
   if (token) {
     api.defaults.headers.common['Authorization'] = `Bearer ${token}`
+    localStorage.setItem('token', token)
   } else {
     delete api.defaults.headers.common['Authorization']
+    localStorage.removeItem('token')
   }
 }
 
-// Request interceptor: ensure token present on each request (fallback)
+// Request interceptor
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token')
-    if (token && !config.headers?.Authorization) {
+    console.log('[API] Making request to:', config.url, 'with token:', !!token)
+    
+    if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
+    
+    // Don't override Content-Type for FormData
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type']
+    }
+    
     return config
   },
   (error) => Promise.reject(error)
 )
 
-// Response interceptor: return response.data for convenience,
-// but DO NOT auto-remove token or redirect on 401 — let Auth context handle that.
+// Response interceptor
 api.interceptors.response.use(
   (response) => response.data,
   (error) => {
-    // don't mutate localStorage here; propagate error to caller
+    console.error('[API] Response error:', error.response?.status, error.response?.data)
     return Promise.reject(error)
   }
 )

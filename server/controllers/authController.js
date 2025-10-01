@@ -32,8 +32,8 @@ export const register = async (req, res, next) => {
 
     await entity.save();
 
-    // Generate token
-    const token = generateToken(entity._id);
+    // Generate token with full entity information
+    const token = generateToken(entity);
 
     res.status(201).json({
       success: true,
@@ -79,8 +79,8 @@ export const login = async (req, res, next) => {
       });
     }
 
-    // Generate token
-    const token = generateToken(entity._id);
+    // Generate token with full entity information
+    const token = generateToken(entity);
 
     res.json({
       success: true,
@@ -150,8 +150,8 @@ export const forgotPassword = async (req, res, next) => {
       });
     }
 
-    // Generate reset token
-    const resetToken = generateToken(entity._id);
+    // Generate reset token with full entity information
+    const resetToken = generateToken(entity);
     
     // Save reset token to entity
     entity.resetPasswordToken = resetToken;
@@ -161,7 +161,7 @@ export const forgotPassword = async (req, res, next) => {
     res.json({
       success: true,
       message: 'Password reset token generated',
-      resetToken // ⚠️ NOTE: in production don’t send token in response, just for now since no email system
+      resetToken
     });
   } catch (error) {
     next(error);

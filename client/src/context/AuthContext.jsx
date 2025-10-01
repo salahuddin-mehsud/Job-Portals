@@ -27,86 +27,98 @@ export const AuthProvider = ({ children }) => {
   }, [])
 
   const checkAuthStatus = async () => {
-    try {
-      const token = localStorage.getItem('token')
-      if (!token) {
-        setLoading(false)
-        setIsAuthenticated(false)
-        return
-      }
-
-      // Try to get the current user (function will try both /users/profile and /companies/profile)
-      const resp = await authService.getCurrentUser()
-
-      // The api wrapper returns response.data (your controllers return { success, data })
-      // So resp is usually { success: true, data: userObject }
-      const userObj = resp?.data ?? resp
-
-      if (!userObj) {
-        console.warn('Auth check: no user data returned', resp)
-        // invalid token or unexpected response
-        localStorage.removeItem('token')
-        setIsAuthenticated(false)
-        setUser(null)
-        return
-      }
-
-      // If userObj still contains success/data (double wrapped), handle that too:
-      const finalUser = userObj?.data ?? userObj
-
-      setUser(finalUser)
-      setIsAuthenticated(true)
-
-      // Connect socket only if token and user exist
-      socketService.connect(token)
-      // optional: emit authenticate event with id if your server expects it
-      try {
-        socketService.emit('authenticate', finalUser._id || finalUser.id)
-      } catch (e) {
-        // ignore if socket emit not handled or not needed
-      }
-    } catch (error) {
-      console.error('Auth check failed:', error)
-      // remove token if server responded with 401/400 (invalid/expired)
-      localStorage.removeItem('token')
-      setUser(null)
-      setIsAuthenticated(false)
-    } finally {
+  try {
+    const token = localStorage.getItem('token')
+    console.log('[AuthContext] Checking auth status, token exists:', !!token)
+    
+    if (!token) {
       setLoading(false)
+      setIsAuthenticated(false)
+      return
     }
-  }
 
-  const login = async (email, password) => {
+    // Set the token before making the request
+    authService.setToken(token)
+
+    // Try to get the current user
+    const result = await authService.getCurrentUser()
+
+    console.log('[AuthContext] getCurrentUser result:', result)
+
+    if (!result.success || !result.data) {
+      console.warn('Auth check: no valid user data returned', result)
+      localStorage.removeItem('token')
+      authService.clearToken()
+      setIsAuthenticated(false)
+      setUser(null)
+      return
+    }
+
+    // The user data is in result.data
+    const userData = result.data
+    
+    console.log('[AuthContext] User data retrieved:', userData)
+    console.log('[AuthContext] User type:', result.userType)
+
+    setUser(userData)
+    setIsAuthenticated(true)
+
+    // Connect socket only if token and user exist
+    socketService.connect(token)
     try {
-      const response = await authService.login(email, password)
-      // api wrapper returns response.data (expected { success:true, data: { user, token } })
-      if (response?.success) {
-        const userData = response.data?.user ?? response.data
-        const token = response.data?.token ?? response.token
+      socketService.emit('authenticate', userData._id || userData.id)
+    } catch (e) {
+      console.warn('Socket authenticate failed:', e)
+    }
+    
+  } catch (error) {
+    console.error('Auth check failed:', error)
+    // Only remove token if it's an authentication error
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token')
+      authService.clearToken()
+    }
+    setUser(null)
+    setIsAuthenticated(false)
+  } finally {
+    setLoading(false)
+  }
+}
 
-        if (token) {
-          localStorage.setItem('token', token)
-        }
+ const login = async (email, password) => {
+  try {
+    const response = await authService.login(email, password)
+    
+    if (response?.success) {
+      const userData = response.data?.user || response.data
+      const token = response.data?.token || response.token
 
-        if (userData) {
-          setUser(userData)
-          setIsAuthenticated(true)
-          socketService.connect(token)
-          try {
-            socketService.emit('authenticate', userData._id || userData.id)
-          } catch (e) {}
-        }
-        return { success: true }
+      if (token) {
+        localStorage.setItem('token', token)
+        authService.setToken(token) // Make sure to set the token
       }
 
-      return { success: false, message: response?.message || 'Login failed' }
-    } catch (error) {
-      return {
-        success: false,
-        message: error.response?.data?.message || 'Login failed'
+      if (userData) {
+        setUser(userData)
+        setIsAuthenticated(true)
+        socketService.connect(token)
+        try {
+          socketService.emit('authenticate', userData._id || userData.id)
+        } catch (e) {
+          console.warn('Socket authenticate failed:', e)
+        }
       }
+      return { success: true }
+    }
+
+    return { success: false, message: response?.message || 'Login failed' }
+  } catch (error) {
+    return {
+      success: false,
+      message: error.response?.data?.message || 'Login failed'
     }
   }
+}
 
   const register = async (userData) => {
     try {

@@ -5,6 +5,7 @@ import JobCard from '../../components/common/JobCard.jsx'
 import LoadingSpinner from '../../components/common/LoadingSpinner.jsx'
 import { JOB_TYPES, EXPERIENCE_LEVELS } from '../../utils/constants.js'
 
+
 const CandidateJobs = () => {
   const [jobs, setJobs] = useState([])
   const [loading, setLoading] = useState(true)
@@ -23,6 +24,7 @@ const CandidateJobs = () => {
   const loadJobs = async () => {
     try {
       const response = await jobService.getJobs()
+      console.log('Jobs response:', response)
       if (response.success) {
         setJobs(response.data.jobs)
       }

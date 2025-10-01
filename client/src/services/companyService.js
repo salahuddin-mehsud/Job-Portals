@@ -32,7 +32,13 @@ export async function getCompanyJobs(params = {}) {
   const url = qs ? `/companies/jobs?${qs}` : '/companies/jobs'
   return await api.get(url)
 }
-
+export async function uploadAvatar(file) {
+  const formData = new FormData()
+  formData.append('avatar', file)
+  return await api.post('/companies/profile/avatar', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+}
 // Public companies listing
 export async function getCompaniesPublic(filters = {}) {
   const params = new URLSearchParams(filters).toString()
@@ -71,5 +77,6 @@ export const companyService = {
   followCompany,
   unfollowCompany,
   getCompanyFollowers,
-  getCompanyFollowing
+  getCompanyFollowing,
+  uploadAvatar
 }

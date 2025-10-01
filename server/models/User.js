@@ -69,4 +69,8 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
 // Index for search functionality
 userSchema.index({ name: 'text', bio: 'text', skills: 'text' });
 
+userSchema.add({
+  posts: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Post' }]
+});
+
 export default mongoose.model('User', userSchema);

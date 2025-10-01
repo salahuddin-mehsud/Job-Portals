@@ -88,35 +88,43 @@ const NewJob = () => {
     }))
   }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    setLoading(true)
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setLoading(true);
 
-    try {
-      // Filter out empty requirements and responsibilities
-      const payload = {
-        ...formData,
-        requirements: formData.requirements.filter(req => req.trim() !== ''),
-        responsibilities: formData.responsibilities.filter(resp => resp.trim() !== ''),
-        salaryRange: {
-          min: parseInt(formData.salaryRange.min),
-          max: parseInt(formData.salaryRange.max),
-          currency: formData.salaryRange.currency
-        },
-        company: user._id
-      }
+  try {
+    // Build a clean payload
+    const payload = {
+      title: formData.title.trim() || 'Untitled Job', // fallback
+      description: formData.description.trim() || 'No description provided',
+      requirements: (formData.requirements || []).filter(req => req.trim() !== ''),
+      responsibilities: (formData.responsibilities || []).filter(resp => resp.trim() !== ''),
+      location: formData.location.trim() || 'Not specified',
+      salaryRange: {
+        min: Number(formData.salaryRange.min) || 0,
+        max: Number(formData.salaryRange.max) || 0,
+        currency: formData.salaryRange.currency || 'USD'
+      },
+      employmentType: formData.employmentType || 'full-time',
+      category: formData.category || 'Other',
+      keywords: (formData.keywords || []).map(k => k.trim()).filter(k => k !== ''),
+      company: user._id
+    };
 
-      const response = await jobService.createJob(payload)
-      if (response.success) {
-        toast.success('Job posted successfully!')
-        navigate('/company/jobs')
-      }
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to post job')
-    } finally {
-      setLoading(false)
+    const response = await jobService.createJob(payload);
+
+    if (response.success) {
+      toast.success('Job posted successfully!');
+      navigate('/company/jobs');
     }
+  } catch (error) {
+    console.log(error.response?.data); // log exact backend error
+    toast.error(error.response?.data?.message || 'Failed to post job');
+  } finally {
+    setLoading(false);
   }
+};
+
 
   const addKeyword = () => {
     const keyword = prompt('Enter a keyword:')

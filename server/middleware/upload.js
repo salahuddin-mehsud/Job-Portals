@@ -1,18 +1,10 @@
+// middleware/upload.js
 import multer from 'multer';
-import path from 'path';
 
-// Configure storage for resume uploads
-const resumeStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/resumes/');
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'resume-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
+// Use memory storage for resume uploads (to get buffer for Cloudinary)
+const resumeStorage = multer.memoryStorage();
 
-// Configure storage for bulk job uploads
+// Configure storage for bulk job uploads (keep as is)
 const bulkJobStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, 'uploads/bulk-jobs/');
@@ -24,7 +16,7 @@ const bulkJobStorage = multer.diskStorage({
 });
 
 export const uploadResume = multer({
-  storage: resumeStorage,
+  storage: resumeStorage, // Changed to memoryStorage
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB
   },

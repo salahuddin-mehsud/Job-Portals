@@ -74,4 +74,9 @@ companySchema.methods.comparePassword = async function(candidatePassword) {
 // Text index for name, bio, industry
 companySchema.index({ name: 'text', bio: 'text', industry: 'text' });
 
+
+companySchema.add({
+  posts: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Post' }]
+});
+
 export default mongoose.model('Company', companySchema);
