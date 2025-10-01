@@ -18,11 +18,6 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: false, // Disable sourcemaps for smaller build
-    emptyOutDir: true
-  },
-  // Important for Vercel deployment
-  define: {
-    'process.env': {}
+    sourcemap: true
   }
 })
