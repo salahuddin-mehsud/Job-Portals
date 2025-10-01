@@ -41,7 +41,7 @@ const PORT = process.env.PORT || 5000;
 // CORS configuration for production
 const allowedOrigins = [
   'http://localhost:3000',
-  'https://your-app-name.vercel.app' // Replace with your actual Vercel domain after deployment
+  'https://job-portal-by-salahuddin.vercel.app/' // Replace with your actual Vercel domain after deployment
 ];
 
 const io = new Server(httpServer, {
